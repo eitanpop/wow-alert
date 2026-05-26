@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path 'D:\\\\wow_rl_addon\\\\yolo' -Recurse -File -Include '*.py')",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E '\\\\.py$|^d')",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' 'D:\\\\wow_rl_addon\\\\wow-alert\\\\_smoke.py')"
+    ]
+  }
+}

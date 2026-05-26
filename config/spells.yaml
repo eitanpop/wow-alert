@@ -1,0 +1,553 @@
+# Spell database. Edit by hand, or regenerate with
+# `poetry run python -m wow_alert.tools.import_spells` when that script exists.
+# The runtime never writes to this file.
+#
+# Schema (authoritative definition is wow_alert/events.py:Spell):
+#   id:           stable identifier (any string)
+#   name:         canonical display name; primary fuzzy-match target
+#   aliases:      known OCR misreads of `name`
+#   dungeon:      null = applies globally; otherwise the dungeon name
+#   severity:     danger | info | ignore
+#   phrase:       AlertPlayer phrase to play on a danger match
+#
+# Optional metadata used by rule engines that have player class / roster context;
+# safe to omit for simple alerts:
+#   cast_by:      which kind of unit casts this (e.g. boss, mob)
+#   school:       spell school
+#   interruptible:bool
+#   counters:     list of {class, spec, action}; specific class responses
+#   notes:        free-text reminder for human readers
+
+- id: windrunner_spire_spirit_bolt
+  name: "Spirit Bolt"
+  aliases: ["Spirit Boit", "Spirlt Bolt"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KICK SPIRIT BOLT
+  cast_by: mob
+  school: shadow
+  interruptible: true
+  notes: "Restless Steward filler cast. Interrupt when possible."
+
+- id: windrunner_spire_soul_torment
+  name: "Soul Torment"
+  aliases: ["Soul Tormemt", "SouI Torment"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: STOP SOUL TORMENT
+  cast_by: mob
+  school: shadow
+  interruptible: false
+  counters:
+    - class: healer
+      spec: any
+      action: magic_dispel
+    - class: any
+      spec: any
+      action: stop
+  notes: "Restless Steward. Very dangerous magic DoT; stop the cast/effect or dispel quickly."
+
+- id: windrunner_spire_arcane_salvo
+  name: "Arcane Salvo"
+  aliases: ["Arcane Saivo", "Arcane Salvoe"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE ARCANE
+  cast_by: mob
+  school: arcane
+  interruptible: false
+  notes: "Spellguard Magus targeted damage. Use defensive if targeted."
+
+- id: windrunner_spire_spellguards_protection
+  name: "Spellguard's Protection"
+  aliases: ["Spellguards Protection", "Spellguard Protection"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: MOVE MOBS OUT
+  cast_by: mob
+  school: arcane
+  interruptible: false
+  notes: "Protection sphere. Knock or move other mobs out of it."
+
+- id: windrunner_spire_fire_spit
+  name: "Fire Spit"
+  aliases: ["Flre Spit", "Fire Split"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: STOP FIRE SPIT
+  cast_by: mob
+  school: fire
+  interruptible: false
+  notes: "Territorial Dragonhawk channel. Stop with CC."
+
+- id: windrunner_spire_acidic_demise
+  name: "Acidic Demise"
+  aliases: ["Acid Demise", "Acidic Demlse"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: MOVE FROM ACID
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Spindleweb Hatchling death puddle."
+
+- id: windrunner_spire_poison_spray
+  name: "Poison Spray"
+  aliases: ["Poison Spay", "Poison Sprav"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE POISON
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Creeping Spindleweb targeted damage."
+
+- id: windrunner_spire_puncturing_bite
+  name: "Puncturing Bite"
+  aliases: ["Puncture Bite", "Puncturing Blte"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: BLEED ON YOU
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Dangerous bleed. Defensive if low."
+
+- id: windrunner_spire_fungal_bolt
+  name: "Fungal Bolt"
+  aliases: ["Fungai Bolt", "Fungal Boit"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KICK FUNGAL
+  cast_by: mob
+  school: nature
+  interruptible: true
+  notes: "Bloated Lasher cast."
+
+- id: windrunner_spire_spore_dispersal
+  name: "Spore Dispersal"
+  aliases: ["Spore Dispersai", "Spore Disperse"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE SPORES
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Bloated Lasher group-wide damage."
+
+- id: windrunner_spire_burning_gale
+  name: "Burning Gale"
+  aliases: ["Burning Gaie", "Burning Gale"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: BURNING GALE
+  cast_by: boss
+  school: fire
+  interruptible: false
+  notes: "Emberdawn. Heavy movement/check phase; healer cooldown likely needed."
+
+- id: windrunner_spire_flaming_updraft
+  name: "Flaming Updraft"
+  aliases: ["Flaming Updralt", "Flaming Updrafts"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DROP UPDRAFT
+  cast_by: boss
+  school: fire
+  interruptible: false
+  notes: "Emberdawn debuff. Move it to edge/corner."
+
+- id: windrunner_spire_flaming_twisters
+  name: "Flaming Twisters"
+  aliases: ["Flaming Twister", "Flaming Twlsters"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: DODGE TORNADOES
+  cast_by: boss
+  school: fire
+  interruptible: false
+  notes: "Emberdawn tornadoes from Flaming Updraft/Burning Gale."
+
+- id: windrunner_spire_fire_breath
+  name: "Fire Breath"
+  aliases: ["Flre Breath", "Fire Breathe"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DODGE BREATH
+  cast_by: boss
+  school: fire
+  interruptible: false
+  notes: "Emberdawn frontal during Burning Gale."
+
+- id: windrunner_spire_searing_beak
+  name: "Searing Beak"
+  aliases: ["Searing Peak", "Searlng Beak"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: TANK BUSTER
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Emberdawn tank hit plus fire DoT."
+
+- id: windrunner_spire_phial_toss
+  name: "Phial Toss"
+  aliases: ["Phial Toss", "Phiai Toss"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: DODGE PHIAL
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Fervent Apothecary ground effect."
+
+- id: windrunner_spire_poison_blade
+  name: "Poison Blade"
+  aliases: ["Poison Blades", "Poison Biade"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KICK POISON
+  cast_by: mob
+  school: nature
+  interruptible: true
+  notes: "Ardent Cutthroat poison weapon cast."
+
+- id: windrunner_spire_pulsing_shriek
+  name: "Pulsing Shriek"
+  aliases: ["Pulsing Shreek", "Puising Shriek"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: BREAK SHRIEK
+  cast_by: mob
+  school: shadow
+  interruptible: true
+  notes: "Devoted Woebringer. Absorb shield causes group-wide pulses until broken/interrupted."
+
+- id: windrunner_spire_shadow_bolt_trash
+  name: "Shadow Bolt"
+  aliases: ["Shadow Boit", "Shad0w Bolt"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KICK SHADOW
+  cast_by: mob
+  school: shadow
+  interruptible: true
+  notes: "Trash filler from Devoted Woebringer and boss Kalis."
+
+- id: windrunner_spire_fetid_spew
+  name: "Fetid Spew"
+  aliases: ["Fetid Spew", "Fetld Spew"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE SPEW
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Flesh Behemoth targeted damage."
+
+- id: windrunner_spire_fetid_bile
+  name: "Fetid Bile"
+  aliases: ["Fetid Biie", "Fetid Bile"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: MOVE FROM BILE
+  cast_by: mob
+  school: nature
+  interruptible: false
+  notes: "Flesh Behemoth ground effect."
+
+- id: windrunner_spire_broken_bond
+  name: "Broken Bond"
+  aliases: ["Broken Bonds", "Brokem Bond"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KILL TOGETHER
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Derelict Duo enrage if one boss dies too early."
+
+- id: windrunner_spire_curse_of_darkness
+  name: "Curse of Darkness"
+  aliases: ["Curse of Darkeness", "Curse 0f Darkness"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: CURSE DISPEL
+  cast_by: boss
+  school: shadow
+  interruptible: false
+  counters:
+    - class: mage
+      spec: any
+      action: remove_curse
+    - class: druid
+      spec: any
+      action: remove_corruption
+    - class: shaman
+      spec: any
+      action: cleanse_spirit
+  notes: "Derelict Duo. Curse spawns Dark Entity fixates; curse dispel removes the entity."
+
+- id: windrunner_spire_splattering_spew
+  name: "Splattering Spew"
+  aliases: ["Splattering Spew", "Splatterlng Spew"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE SPEW
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "Derelict Duo group-wide damage; place Gunk Splatter safely."
+
+- id: windrunner_spire_gunk_splatter
+  name: "Gunk Splatter"
+  aliases: ["Gunk Splater", "Gunk Splatter"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: DROP GUNK
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "Derelict Duo puddle/space-management mechanic."
+
+- id: windrunner_spire_debilitating_shriek
+  name: "Debilitating Shriek"
+  aliases: ["Debilitating Shreek", "Debiiitating Shriek"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: HOOK SHRIEK
+  cast_by: boss
+  school: shadow
+  interruptible: false
+  notes: "Derelict Duo. Stop by using Latch's Heaving Yank mechanic."
+
+- id: windrunner_spire_heaving_yank
+  name: "Heaving Yank"
+  aliases: ["Heaving Yenk", "Heavlng Yank"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: AIM HOOK
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Derelict Duo hook. Use to interrupt Debilitating Shriek."
+
+- id: windrunner_spire_bone_hack
+  name: "Bone Hack"
+  aliases: ["Bone Hack", "Bome Hack"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: TANK BUSTER
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Derelict Duo tank hit from Latch."
+
+- id: windrunner_spire_arrow_rain
+  name: "Arrow Rain"
+  aliases: ["Arrow Ram", "Arrow Raln"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: DODGE ARROWS
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Swiftshot Archer and Restless Heart ground impacts."
+
+- id: windrunner_spire_break_ranks
+  name: "Break Ranks"
+  aliases: ["Break Rank", "Break Ranks"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DODGE CHARGE
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Phalanx Breaker charge."
+
+- id: windrunner_spire_interrupting_screech
+  name: "Interrupting Screech"
+  aliases: ["Interrupt Screech", "Interupting Screech"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: STOP CASTING
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Stop casting before it finishes."
+
+- id: windrunner_spire_throw_axe
+  name: "Throw Axe"
+  aliases: ["Throw Ax", "Throw Axe"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: AXE BLEED
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Spectral Axethrower bleed; dangerous with overlap."
+
+- id: windrunner_spire_gore_whirl
+  name: "Gore Whirl"
+  aliases: ["Gore WhirI", "Gore Wirl"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: MOVE OUT
+  cast_by: mob
+  school: physical
+  interruptible: false
+  notes: "Lingering Marauder whirl. Outrange it."
+
+- id: windrunner_spire_chain_lightning
+  name: "Chain Lightning"
+  aliases: ["Chain Lightnlng", "Cham Lightning"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: KICK CHAIN
+  cast_by: mob
+  school: nature
+  interruptible: true
+  notes: "Phantasmal Mystic jump damage."
+
+- id: windrunner_spire_flame_nova
+  name: "Flame Nova"
+  aliases: ["Flame Nove", "Fiame Nova"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE NOVA
+  cast_by: mob
+  school: fire
+  interruptible: false
+  notes: "Phantasmal Mystic group damage."
+
+- id: windrunner_spire_reckless_leap
+  name: "Reckless Leap"
+  aliases: ["Reckless Leep", "ReckIess Leap"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: BAIT LEAP
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk targets farthest player; use defensive if baiting."
+
+- id: windrunner_spire_falling_rubble
+  name: "Falling Rubble"
+  aliases: ["Falling Ruble", "Faliing Rubble"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: DODGE RUBBLE
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk ground puddles after Reckless Leap."
+
+- id: windrunner_spire_intimidating_shout
+  name: "Intimidating Shout"
+  aliases: ["Intimidating Shout", "Intimidatlng Shout"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: STACK FOR FEAR
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk. Stack together to avoid fear."
+
+- id: windrunner_spire_rallying_bellow
+  name: "Rallying Bellow"
+  aliases: ["Rallying Beliow", "Rallying Below"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: BIG AOE
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk 66% and 33% intermission; massive group-wide damage and add spawns."
+
+- id: windrunner_spire_shield_wall
+  name: "Shield Wall"
+  aliases: ["Shieid Wall", "Shield WalI"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: KILL ADDS
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk takes reduced damage during add phase."
+
+- id: windrunner_spire_bladestorm
+  name: "Bladestorm"
+  aliases: ["Blade Storm", "Biadestorm"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: AVOID BLADESTORM
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk add phase danger."
+
+- id: windrunner_spire_rampage
+  name: "Rampage"
+  aliases: ["Rampage", "Rarnpage"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: TANK DEFENSIVE
+  cast_by: boss
+  school: physical
+  interruptible: false
+  notes: "Commander Kroluk tank damage."
+
+- id: windrunner_spire_squall_leap
+  name: "Squall Leap"
+  aliases: ["Squall Leep", "Squaii Leap"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: CLEAR SQUALL
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "The Restless Heart. Clear using Turbulent Arrows."
+
+- id: windrunner_spire_turbulent_arrows
+  name: "Turbulent Arrows"
+  aliases: ["Turbulent Arrow", "Turbuiant Arrows"]
+  dungeon: "Windrunner Spire"
+  severity: info
+  phrase: TAKE ARROW
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "The Restless Heart. Use to clear Squall Leap and avoid Billowing Wind."
+
+- id: windrunner_spire_bolt_gale
+  name: "Bolt Gale"
+  aliases: ["Boit Gale", "Bolt Gaie"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: DEFENSIVE GALE
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "The Restless Heart targeted/party pressure."
+
+- id: windrunner_spire_billowing_wind
+  name: "Billowing Wind"
+  aliases: ["Billowing Wlnd", "Biliowing Wind"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: AVOID WIND WAVE
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "The Restless Heart wave. Use Turbulent Arrows lift to avoid."
+
+- id: windrunner_spire_tempest_slash
+  name: "Tempest Slash"
+  aliases: ["Tempest Siash", "Tempest Slash"]
+  dungeon: "Windrunner Spire"
+  severity: danger
+  phrase: TANK BUSTER
+  cast_by: boss
+  school: nature
+  interruptible: false
+  notes: "The Restless Heart tank hit."

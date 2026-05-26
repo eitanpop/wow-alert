@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "wow-alert"
+version = "0.1.0"
+description = ""
+authors = ["eitan <eitanpop@gmail.com>"]
+readme = "README.md"
+packages = [{include = "wow_alert"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+torch = {version = "^2.5.1+cu121", source = "pytorch_cu121"}
+torchvision = {version = "^0.20.1+cu121", source = "pytorch_cu121"}
+ultralytics = "^8.4.53"
+bettercam = {version = "^1.0", markers = "sys_platform == 'win32'"}
+opencv-python = "^4.13.0.92"
+pywin32 = {version = "^311", markers = "sys_platform == 'win32'"}
+pyside6 = "^6.8.0"
+rapidocr-onnxruntime = "^1.4.0"
+pyttsx3 = "^2.98"
+pydantic = "^2.9.0"
+pyyaml = "^6.0"
+rapidfuzz = "^3.10.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-qt = "^4.4.0"
+
+[tool.poetry.scripts]
+wow-alert = "wow_alert.cli:main"
+
+
+[[tool.poetry.source]]
+name = "pytorch_cu121"
+url = "https://download.pytorch.org/whl/cu121"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

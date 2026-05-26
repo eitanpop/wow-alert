@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Ultralytics / training artifacts
+runs/                    # training output if project= is omitted
+datasets/                # ultralytics' default dataset download dir
+*.pt                     # pretrained backbones auto-downloaded, plus any local weights
+*.engine                 # TensorRT exports
+*.onnx                   # ONNX exports
+events.out.tfevents.*    # tensorboard logs
+
+# Project-local data scratch
+seat_prelabels.json
+
+# Generated at runtime
+config/tts_cache/

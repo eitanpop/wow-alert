@@ -1,0 +1,25 @@
+# wow-alert runtime config. CLI flags and env vars override these.
+window_title: World of Warcraft
+model_path: D:/wow_rl_addon/models/model2/runs/detect/train-2/weights/best.pt
+confidence: 0.4
+imgsz: 1280
+display_width: 1280
+window_refresh_interval: 1.0
+target_fps: 10
+lost_track_tolerance_s: 0.5
+alert_dedupe_default_ttl_s: 5.0
+alert_dedupe_max_ttl_s: 60.0
+alert_dedupe_unmatched_max_ttl_s: 10.0
+ocr_thread_cap: 2
+show_preview: true
+
+spell_db_path: config/spells.yaml
+tts_cache_dir: config/tts_cache
+
+fuzzy_threshold: 85
+
+# Optional scoping. When set, only spells matching the dungeon and only counters
+# matching the (class, spec) pair are loaded. Leave null to load everything.
+dungeon: null
+player_class: null
+player_spec: null
