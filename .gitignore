@@ -21,5 +21,10 @@ events.out.tfevents.*    # tensorboard logs
 # Project-local data scratch
 seat_prelabels.json
 
-# Generated at runtime
+# Generated at runtime — moved to the OS user-data dir (see wow_alert/paths.py).
+# The line below is a guard in case an override config/app.yaml puts the cache
+# back into the project tree.
 config/tts_cache/
+
+# Secrets
+.env

@@ -21,7 +21,8 @@ poetry install
 This installs the package and exposes the `wow-alert` console script.
 
 First launch downloads the rapidocr ONNX models (~15 MB) and pre-renders the TTS
-phrase set (e.g. `DANGER.wav`) into `config/tts_cache/`. Subsequent launches reuse
+phrase set (e.g. `DANGER.wav`) into the OS user-data directory
+(`%LOCALAPPDATA%\wow-alert\tts_cache\` on Windows). Subsequent launches reuse
 both.
 
 ## Running
@@ -66,28 +67,45 @@ Persist in your PowerShell `$PROFILE` for hands-off launches.
 
 ## Spell database
 
-`config/spells.yaml` is a static file edited by hand (or, eventually, by
-`poetry run python -m wow_alert.tools.import_spells`). It is **not** grown at runtime.
-
-Schema (see `wow_alert/events.py:Spell`):
-
-```yaml
-- id: vigilant_defense
-  name: "Vigilant Defense"
-  aliases: ["Vigliant Defense"]       # known OCR misreads
-  dungeon: "Operation: Floodgate"     # null = global
-  severity: danger                    # danger | info | ignore
-  phrase: DANGER                      # which TTS phrase to play
-
-  # Iter-2 fields — optional, ignored in iter 1
-  cast_by: [boss]
-  counters:
-    - {class: paladin, spec: holy, action: BOP}
+```
+config/
+  dungeons/
+    _global.yaml                  # cross-dungeon spells + rules
+    windrunner_spire.yaml         # one file per dungeon
+    mists_of_tirna_scithe.yaml
+    ...
 ```
 
-Match logic: `rapidfuzz.token_set_ratio` on both spell and target, threshold 85
-(configurable in `app.yaml`). Either side missing the threshold returns no match
-(fail-closed — no false alerts).
+Filename is the dungeon's display name slugified
+(`"Mists of Tirna Scithe"` → `mists_of_tirna_scithe.yaml`). When
+calibration identifies the active dungeon, the loader picks
+`_global.yaml` **plus** that dungeon's file — no others — and feeds
+both into the spell DB and rule engine.
+
+Each file:
+
+```yaml
+dungeon: "Windrunner Spire"        # display name (omit for _global.yaml)
+
+spells:
+  - id: spirit_bolt
+    name: "Spirit Bolt"
+    aliases: ["SpiritBolt", "SpiritE Bolt"]
+    severity: danger                # danger | info | ignore
+    phrase: DANGER                  # TTS phrase key
+    duration: 2.5                   # optional; trusted over OCR if present
+    counters:
+      - {class: paladin, spec: holy, action: BOP}
+
+rules: []                           # placeholder — Phase E populates
+```
+
+### Match logic
+
+`rapidfuzz.token_set_ratio` on the spell name with threshold 85;
+`max(token_set_ratio, partial_ratio)` against the roster for target
+canonicalization with threshold 70. Either check missing the threshold
+returns no match (fail-closed — no false alerts).
 
 ## Training a new model
 
@@ -197,7 +215,10 @@ wow_alert/
 config/
   app.yaml
   spells.yaml
-  tts_cache/         # generated at runtime; gitignored
+
+%LOCALAPPDATA%\wow-alert\   # generated at runtime, outside the project tree
+  tts_cache/                # TTS-rendered phrase WAVs
+  calibration.yaml          # LLM-derived screen layout (iter 2+)
 
 tests/               # pytest + pytest-qt
 ```

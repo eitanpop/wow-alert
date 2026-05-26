@@ -8,13 +8,17 @@ window_refresh_interval: 1.0
 target_fps: 10
 lost_track_tolerance_s: 0.5
 alert_dedupe_default_ttl_s: 5.0
-alert_dedupe_max_ttl_s: 60.0
+alert_dedupe_max_ttl_s: 10.0
 alert_dedupe_unmatched_max_ttl_s: 10.0
 ocr_thread_cap: 2
 show_preview: true
 
-spell_db_path: config/spells.yaml
-tts_cache_dir: config/tts_cache
+# Spells + rules are loaded from config/dungeons/ (see _global.yaml plus
+# per-dungeon files). No path config here — the layout is fixed.
+#
+# tts_cache_dir is intentionally omitted — defaults to the OS user-data
+# directory (see wow_alert/paths.py). Override here only if you need a
+# project-local cache, e.g. for testing.
 
 fuzzy_threshold: 85
 

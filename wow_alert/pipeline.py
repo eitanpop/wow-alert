@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
@@ -28,7 +28,15 @@ from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from wow_alert.capture import WindowCapture
 from wow_alert.cast_bar import make_cast_event, tokens_from_ocr_output
 from wow_alert.dedupe import CastDeduper, Disposition
-from wow_alert.events import Alert, AlertPlayer, Detector, OcrEngine, ScreenContext
+from wow_alert.events import (
+    Alert,
+    AlertPlayer,
+    Detector,
+    OcrEngine,
+    Recommendation,
+    RuleDecisionContext,
+    ScreenContext,
+)
 from wow_alert.rules import RuleEngine
 from wow_alert.tracker import CastBarTracker, Track
 
@@ -73,6 +81,13 @@ class PipelineWorker(QObject):
         self._paused = False
         self._preview_enabled = preview_enabled
         self._context = ScreenContext()
+        # Most recently captured frame, updated each tick. Exposed via
+        # latest_frame() so the calibration flow can grab a current frame
+        # without subscribing to frame_ready (which is gated by preview).
+        # Cross-thread read is safe (numpy array assignment is atomic in
+        # CPython); consumers may see one tick behind, which is fine for
+        # calibration purposes.
+        self._latest_frame: np.ndarray | None = None
         # Minimum wall time per tick. Cast bars last 1-10 s, so even 5 FPS
         # catches them; the default 10 FPS leaves headroom for jitter without
         # starving the GPU/game render thread.
@@ -85,6 +100,11 @@ class PipelineWorker(QObject):
     @Slot(bool)
     def set_paused(self, value: bool) -> None:
         self._paused = value
+
+    def latest_frame(self) -> np.ndarray | None:
+        """Return the most recently captured frame, or None before the first
+        successful capture. Callable from any thread."""
+        return self._latest_frame
 
     @Slot(bool)
     def set_preview_enabled(self, value: bool) -> None:
@@ -150,6 +170,8 @@ class PipelineWorker(QObject):
             self.error.emit("capture", "window not found")
             return self._WINDOW_RETRY_MS
 
+        self._latest_frame = frame
+
         try:
             detections = self._deps.detector.detect(frame)
         except Exception as exc:
@@ -212,31 +234,60 @@ class PipelineWorker(QObject):
 
         if outcome.disposition is Disposition.MATCHED_NEW:
             spell = outcome.canonical_spell
+            # Swap raw OCR target for the roster-canonical name when the
+            # deduper resolved one. Rule engine + alert message + log line
+            # all see the canonical target this way.
+            if outcome.canonical_target is not None and outcome.canonical_target != cast.target:
+                cast = replace(cast, target=outcome.canonical_target)
             self.worker_message.emit("DEBUG", f"matched in DB: {spell.name}")
             self.worker_message.emit(
                 "LOG",
                 f"registered: {spell.name}{self._target_suffix(cast)} "
                 f"→ rule engine (ttl={outcome.ttl_s:.1f}s)",
             )
-            self._context.cast_events = [cast]
+            # Build the explicit decision context the engine expects. Most
+            # fields stay default until Phase F populates cooldowns and
+            # Phase E filters available_counters; the engine doesn't read
+            # them yet either.
+            decision_ctx = RuleDecisionContext(
+                spell=spell,
+                cast=cast,
+                canonical_target=outcome.canonical_target,
+                dungeon=self._context.dungeon,
+                player_class=self._context.player_class,
+                player_spec=self._context.player_spec,
+                cooldowns=dict(self._context.cooldowns),
+                roster=list(self._context.roster),
+            )
             try:
-                outputs = self._deps.rule_engine.evaluate(self._context)
+                output = self._deps.rule_engine.decide(decision_ctx)
             except Exception as exc:
                 self.error.emit("rules", str(exc))
                 return
-            for output in outputs:
-                if isinstance(output, Alert):
-                    try:
-                        self._deps.alert_player.play(output.phrase)
-                    except Exception as exc:
-                        self.error.emit("audio", str(exc))
-                    self.alert.emit(output)
+            if isinstance(output, Alert):
+                try:
+                    self._deps.alert_player.play(output.phrase)
+                except Exception as exc:
+                    self.error.emit("audio", str(exc))
+                self.alert.emit(output)
+            elif isinstance(output, Recommendation):
+                # Phase E will wire up Recommendation playback (token-concat
+                # WAV: action + target). For now, surface it as a LOG so
+                # the operator sees the engine made the recommendation
+                # decision even before audio is hooked up.
+                self.worker_message.emit(
+                    "LOG", f"RECOMMEND: {output.message}"
+                )
 
         elif outcome.disposition is Disposition.MATCHED_DUPLICATE:
             spell = outcome.canonical_spell
+            # Use canonical target in the skip log too, so the message
+            # matches the registered/alert line for the same cast.
+            display_target = outcome.canonical_target or cast.target
+            target_suffix = f" on {display_target}" if display_target else ""
             self.worker_message.emit(
                 "DEBUG",
-                f"skipping {spell.name}{self._target_suffix(cast)}: cached (in DB)",
+                f"skipping {spell.name}{target_suffix}: cached (in DB)",
             )
 
         elif outcome.disposition is Disposition.UNMATCHED_NEW:

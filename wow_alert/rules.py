@@ -14,7 +14,15 @@ from typing import Iterable
 import yaml
 from rapidfuzz import fuzz, process
 
-from wow_alert.events import Alert, RuleOutput, ScreenContext, Severity, Spell
+from wow_alert.events import (
+    Alert,
+    Recommendation,
+    RuleDecisionContext,
+    RuleOutput,
+    ScreenContext,
+    Severity,
+    Spell,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,50 +53,73 @@ class YamlSpellDb:
         fuzzy_threshold: int = 85,
         roster: Iterable[str] | None = None,
     ):
-        self._spells: list[Spell] = list(spells)
         self.fuzzy_threshold = fuzzy_threshold
-        self._roster: list[str] = list(roster) if roster else []
-        self._roster_lower: list[str] = [name.lower() for name in self._roster]
+        self._roster: list[str] = []
+        self._roster_lower: list[str] = []
+        self.set_roster(roster or [])
 
-        # Flat name-to-spell index, including aliases.
+        # `_spells` and the lookup indexes are rebuilt by `replace_spells`,
+        # which is also how calibration swaps the active dungeon's spell
+        # set in. The constructor is just the first call.
+        self._spells: list[Spell] = []
         self._name_index: dict[str, Spell] = {}
-        for spell in self._spells:
-            self._name_index[spell.name.lower()] = spell
-            for alias in spell.aliases:
-                self._name_index[alias.lower()] = spell
-        self._all_names: list[str] = list(self._name_index.keys())
+        self._all_names: list[str] = []
+        self.replace_spells(spells)
 
     @classmethod
     def from_yaml(
         cls,
         path: Path,
-        dungeon: str | None = None,
         player_class: str | None = None,
         player_spec: str | None = None,
         fuzzy_threshold: int = 85,
         roster: Iterable[str] | None = None,
     ) -> "YamlSpellDb":
+        """Load a flat list-of-spells YAML file.
+
+        Kept for compatibility with the original schema; new code should
+        use `wow_alert.dungeon_loader.load_dungeon_config` + `replace_spells`
+        to load from `config/dungeons/`. Class/spec filtering on counters
+        applies regardless of which loader you use.
+        """
         with Path(path).open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or []
         spells = [Spell.model_validate(entry) for entry in raw]
-        filtered = [
-            s for s in spells
-            if s.dungeon is None or dungeon is None or s.dungeon == dungeon
-        ]
-        if player_class is not None and player_spec is not None:
-            for spell in filtered:
-                spell.counters = [
-                    c for c in spell.counters
-                    if c.character_class == player_class and c.spec == player_spec
-                ]
-        logger.info(
-            "Loaded %d spells (filtered from %d) — dungeon=%r class=%r spec=%r",
-            len(filtered), len(spells), dungeon, player_class, player_spec,
+        return cls(
+            apply_counter_filter(spells, player_class, player_spec),
+            fuzzy_threshold=fuzzy_threshold,
+            roster=roster,
         )
-        return cls(filtered, fuzzy_threshold=fuzzy_threshold, roster=roster)
 
     def all_phrases(self) -> list[str]:
         return sorted({s.phrase for s in self._spells})
+
+    def set_roster(self, names: Iterable[str]) -> None:
+        """Update the roster used by `_target_ok`'s fuzzy-match check.
+
+        Live-mutable so calibration can refresh the roster mid-session
+        without an app restart.
+        """
+        self._roster = list(names)
+        self._roster_lower = [n.lower() for n in self._roster]
+
+    def replace_spells(self, spells: Iterable[Spell]) -> None:
+        """Swap in a new active spell set and rebuild lookup indexes.
+
+        Called once at construction (with the initial set) and again
+        whenever the dungeon-loader produces a fresh list — e.g., after
+        the user accepts a new calibration that changes the active
+        dungeon. Roster is unaffected.
+        """
+        self._spells = list(spells)
+        index: dict[str, Spell] = {}
+        for spell in self._spells:
+            index[spell.name.lower()] = spell
+            for alias in spell.aliases:
+                index[alias.lower()] = spell
+        self._name_index = index
+        self._all_names = list(index.keys())
+        logger.info("Spell DB now holds %d spells", len(self._spells))
 
     def lookup(self, spell_text: str, target_text: str | None) -> Spell | None:
         spell = self._lookup_spell(spell_text)
@@ -164,34 +195,118 @@ class YamlSpellDb:
         return match is not None
 
 
-class RuleEngine:
-    """Maps cast events to alerts.
+def apply_counter_filter(
+    spells: Iterable[Spell],
+    player_class: str | None,
+    player_spec: str | None,
+) -> list[Spell]:
+    """Prune each spell's `counters` list to entries matching the given
+    class+spec. No-op when either is None (load every counter; rule engine
+    will sort them out at decide-time)."""
+    spells = list(spells)
+    if player_class is None or player_spec is None:
+        return spells
+    for spell in spells:
+        spell.counters = [
+            c for c in spell.counters
+            if c.character_class == player_class and c.spec == player_spec
+        ]
+    return spells
 
-    Pure mapping — no dedupe lives here. Upstream is responsible for handing
-    over only the cast events that should be alerted on (see `CastDeduper`).
-    Keeping the engine pure makes it easier to extend with non-temporal rules
-    (e.g., class-specific counter recommendations) without entangling them
-    with dedup state.
+
+class RuleEngine:
+    """Decides what to do for one matched, deduped cast.
+
+    `decide(RuleDecisionContext)` is the primary entry point and a pure
+    function — no spell-DB lookup, no dedupe, no temporal state. Upstream
+    (pipeline + deduper) does all the resolution and hands the engine a
+    fully-populated context. The engine then returns a single
+    `RuleOutput` (Alert, Recommendation) or `None` to suppress.
+
+    This shape is intentional: it makes the engine the place where game
+    policy lives — "if a counter is available, prefer Recommendation",
+    "if dungeon is X and severity is info, suppress", etc. — without
+    those policies needing to know anything about how spells get matched
+    or how dedupe works.
+
+    `evaluate(ScreenContext)` is kept as a compatibility shim for callers
+    that haven't migrated to the explicit context yet (and for tests that
+    exercise lookup + alert in one shot).
     """
 
     def __init__(self, spell_db: YamlSpellDb):
         self.spell_db = spell_db
+        # Authored per-dungeon rules from `dungeons/*.yaml`. Stored as
+        # opaque dicts for now — `decide()` doesn't read them yet, but
+        # plumbing them through means you can start authoring rules and
+        # not lose any when Phase E begins interpreting them.
+        self._rules: list[dict] = []
+
+    def set_rules(self, rules: list[dict]) -> None:
+        """Replace the active rule set (e.g., on dungeon change). No-op
+        on `decide()` until Phase E wires up rule interpretation."""
+        self._rules = list(rules)
+        logger.info("Rule engine now holds %d rules", len(self._rules))
+
+    def decide(self, ctx: RuleDecisionContext) -> RuleOutput | None:
+        """Pure policy: given a matched cast and full context, return the
+        single output to emit (or None to suppress).
+
+        Iteration-1 logic is deliberately thin:
+          - severity IGNORE → suppress
+          - any available_counters → Recommendation (using the first one;
+            Phase E will introduce priority/selection logic)
+          - otherwise → Alert with severity/phrase from the spell
+
+        Tweak this method to add policy; everything upstream is unchanged.
+        """
+        spell = ctx.spell
+        if spell.severity == Severity.IGNORE:
+            return None
+
+        target_str = f" on {ctx.cast.target}" if ctx.cast.target else ""
+        duration_str = (
+            f" ({ctx.cast.duration:.1f}s)" if ctx.cast.duration is not None else ""
+        )
+        message = f"{spell.name}{target_str}{duration_str}"
+
+        if ctx.available_counters:
+            counter = ctx.available_counters[0]
+            return Recommendation(
+                action=counter.action,
+                target=ctx.canonical_target or ctx.cast.target or "",
+                phrase=counter.action,  # Phase D's WAV concat will combine action+target
+                message=f"{counter.action}{target_str} (for {spell.name})",
+            )
+
+        return Alert(
+            severity=spell.severity,
+            phrase=spell.phrase,
+            message=message,
+        )
 
     def evaluate(self, ctx: ScreenContext) -> list[RuleOutput]:
+        """Compatibility shim. Looks up each cast event in the DB, builds a
+        `RuleDecisionContext`, and dispatches to `decide()`. New callers
+        should build the context directly — this path duplicates lookup
+        work the deduper already did.
+        """
         outputs: list[RuleOutput] = []
         for event in ctx.cast_events:
             spell = self.spell_db.lookup(event.spell, event.target)
             if spell is None:
                 continue
-            if spell.severity == Severity.IGNORE:
-                continue
-            target_str = f" on {event.target}" if event.target else ""
-            duration_str = f" ({event.duration:.1f}s)" if event.duration is not None else ""
-            outputs.append(
-                Alert(
-                    severity=spell.severity,
-                    phrase=spell.phrase,
-                    message=f"{spell.name}{target_str}{duration_str}",
-                )
+            decision_ctx = RuleDecisionContext(
+                spell=spell,
+                cast=event,
+                canonical_target=event.target,
+                roster=list(ctx.roster),
+                dungeon=ctx.dungeon,
+                player_class=ctx.player_class,
+                player_spec=ctx.player_spec,
+                cooldowns=dict(ctx.cooldowns),
             )
+            output = self.decide(decision_ctx)
+            if output is not None:
+                outputs.append(output)
         return outputs

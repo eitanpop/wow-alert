@@ -49,6 +49,7 @@ def make_deps(outcome: DedupeOutcome | None = None):
             disposition=Disposition.MATCHED_NEW,
             canonical_spell=Spell(id="poly", name="Polymorph",
                                   severity=Severity.DANGER, duration=3.0),
+            canonical_target=None,
             ttl_s=3.0,
         )
     deduper.process.return_value = outcome
@@ -105,6 +106,7 @@ def test_matched_duplicate_skips_rule_engine():
         disposition=Disposition.MATCHED_DUPLICATE,
         canonical_spell=Spell(id="poly", name="Polymorph",
                               severity=Severity.DANGER, duration=3.0),
+        canonical_target=None,
         ttl_s=0.0,
     )
     deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(outcome=outcome)
@@ -128,6 +130,7 @@ def test_unmatched_new_registers_without_rule_engine():
     outcome = DedupeOutcome(
         disposition=Disposition.UNMATCHED_NEW,
         canonical_spell=None,
+        canonical_target=None,
         ttl_s=3.0,
     )
     deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(outcome=outcome)
@@ -151,6 +154,7 @@ def test_unmatched_duplicate_skips_silently_at_log_level():
     outcome = DedupeOutcome(
         disposition=Disposition.UNMATCHED_DUPLICATE,
         canonical_spell=None,
+        canonical_target=None,
         ttl_s=0.0,
     )
     deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(outcome=outcome)

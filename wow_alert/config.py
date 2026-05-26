@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from wow_alert.paths import TTS_CACHE_DIR
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -72,11 +74,15 @@ class AppConfig(BaseModel):
         ),
     )
     alert_dedupe_max_ttl_s: float = Field(
-        default=60.0,
+        default=10.0,
         description=(
             "Hard upper bound on the dedupe TTL for casts matched in the "
             "spell DB. The matched path trusts `Spell.duration`, but this "
-            "guards against a DB entry with a nonsensical duration."
+            "guards against a DB entry with a nonsensical duration or an "
+            "OCR'd duration that survived the parser. 10s matches the "
+            "unmatched cap — most WoW casts complete inside that window, "
+            "and re-alerting is preferable to missing alerts when a spell "
+            "casts twice in quick succession."
         ),
     )
     alert_dedupe_unmatched_max_ttl_s: float = Field(
@@ -106,15 +112,14 @@ class AppConfig(BaseModel):
         ),
     )
 
-    spell_db_path: Path = Field(
-        default=REPO_ROOT / "config" / "spells.yaml",
-        description="Path to the spell database YAML.",
-    )
     tts_cache_dir: Path = Field(
-        default=REPO_ROOT / "config" / "tts_cache",
+        default_factory=lambda: TTS_CACHE_DIR,
         description=(
-            "Directory for TTS-pre-rendered phrase WAVs. Created if missing. "
-            "Safe to delete to force re-rendering."
+            "Directory for TTS-pre-rendered phrase WAVs. Defaults to the OS "
+            "user-data directory (%LOCALAPPDATA%\\wow-alert\\tts_cache on "
+            "Windows) — generated artifacts don't belong in the project "
+            "tree. Override only if you have a specific reason. Safe to "
+            "delete the contents to force re-rendering."
         ),
     )
 
@@ -145,7 +150,7 @@ class AppConfig(BaseModel):
         description="Player spec; pairs with `player_class` for counter filtering.",
     )
 
-    @field_validator("model_path", "spell_db_path", "tts_cache_dir", mode="before")
+    @field_validator("model_path", "tts_cache_dir", mode="before")
     @classmethod
     def _to_path(cls, v: Any) -> Path:
         return Path(v) if not isinstance(v, Path) else v

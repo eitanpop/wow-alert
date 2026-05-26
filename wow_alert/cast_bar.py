@@ -29,6 +29,11 @@ from dataclasses import dataclass
 from wow_alert.events import BBox, CastEvent
 
 DURATION_RE = re.compile(r"^\d{1,3}(\.\d{1,2})?$")
+# Anything below this is treated as not-a-duration. The most common bad
+# signal is OCR'ing "0.0" from a tail-end frame or an HP percent; that
+# would otherwise feed a 0-second TTL into the deduper and disable dedup
+# entirely for the affected cast.
+MIN_DURATION = 0.5
 
 # Minimum x-gap to treat as a spell/target separator, as a fraction of crop
 # width. Intra-word spacing in cast-bar fonts is typically ~1-3% of crop width;
@@ -54,13 +59,24 @@ def _clean(token: str) -> str:
 
 
 def _parse_duration(token: str) -> float | None:
+    """Return the token as a cast duration in seconds, or None if it doesn't
+    look like one.
+
+    Rejects values below `MIN_DURATION` — OCR'd "0.0" from an HP percent or
+    a finished cast is the most common bad signal here, and a 0-second
+    duration causes downstream dedupe to use a 0-second TTL (no dedupe at
+    all → spurious re-alerts).
+    """
     cleaned = _clean(token).replace("s", "").replace("S", "")
-    if DURATION_RE.match(cleaned):
-        try:
-            return float(cleaned)
-        except ValueError:
-            return None
-    return None
+    if not DURATION_RE.match(cleaned):
+        return None
+    try:
+        value = float(cleaned)
+    except ValueError:
+        return None
+    if value < MIN_DURATION:
+        return None
+    return value
 
 
 def parse_tokens(

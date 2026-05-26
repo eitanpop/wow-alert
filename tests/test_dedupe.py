@@ -151,6 +151,82 @@ class TestUnmatchedPath:
         assert outcome.ttl_s == 5.0
 
 
+class TestCanonicalTarget:
+    """Roster-driven target canonicalization (Phase B). Jittered OCR variants
+    of the same teammate should collapse to one cache entry once a roster
+    is configured."""
+
+    def test_no_roster_keeps_raw_target(self):
+        clock = FakeClock()
+        d = CastDeduper(
+            spell_db=db(Spell(id="poly", name="Polymorph",
+                              severity=Severity.DANGER, duration=4.0)),
+            clock=clock,
+        )
+        outcome = d.process(evt("Polymorph", "Jhon"))
+        assert outcome.canonical_target == "Jhon"
+
+    def test_roster_canonicalizes_jittered_target(self):
+        clock = FakeClock()
+        d = CastDeduper(
+            spell_db=db(Spell(id="poly", name="Polymorph",
+                              severity=Severity.DANGER, duration=4.0)),
+            roster=["John Smith", "Mary"],
+            clock=clock,
+        )
+        outcome = d.process(evt("Polymorph", "Jhon Smith"))
+        assert outcome.canonical_target == "John Smith"
+
+    def test_canonical_target_collapses_cache_keys(self):
+        # The whole point of Phase B: "Meredy" / "MeredyH2" / "Meredy H"
+        # all resolve to "Meredy Huntswell" → same cache key → dedup.
+        clock = FakeClock()
+        d = CastDeduper(
+            spell_db=db(Spell(id="sb", name="Spirit Bolt",
+                              severity=Severity.DANGER, duration=3.0)),
+            roster=["Meredy Huntswell", "Austin Huxworth"],
+            clock=clock,
+        )
+        first = d.process(evt("Spirit Bolt", "Meredy"))
+        assert first.disposition is Disposition.MATCHED_NEW
+        clock.advance(0.5)
+        second = d.process(evt("Spirit Bolt", "MeredyH2"))
+        assert second.disposition is Disposition.MATCHED_DUPLICATE
+        clock.advance(0.5)
+        third = d.process(evt("Spirit Bolt", "Meredy H"))
+        assert third.disposition is Disposition.MATCHED_DUPLICATE
+
+    def test_non_roster_target_does_not_canonicalize(self):
+        # Target that's nowhere near a roster entry stays as raw text and
+        # gets its own cache key — boss tank-swap shouldn't collapse with
+        # a teammate's cast.
+        clock = FakeClock()
+        d = CastDeduper(
+            spell_db=db(Spell(id="poly", name="Polymorph",
+                              severity=Severity.DANGER, duration=3.0)),
+            roster=["John", "Mary"],
+            clock=clock,
+        )
+        outcome = d.process(evt("Polymorph", "Zxywuv"))
+        assert outcome.canonical_target == "Zxywuv"
+
+    def test_set_roster_updates_canonicalization(self):
+        clock = FakeClock()
+        d = CastDeduper(
+            spell_db=db(Spell(id="poly", name="Polymorph",
+                              severity=Severity.DANGER, duration=3.0)),
+            clock=clock,
+        )
+        # Pre-roster: jittered target stays raw.
+        outcome = d.process(evt("Polymorph", "Jhon Smith"))
+        assert outcome.canonical_target == "Jhon Smith"
+        # After roster update, a future cast with a similar name canonicalizes.
+        d.set_roster(["John Smith"])
+        clock.advance(5.0)  # let TTL clear
+        outcome2 = d.process(evt("Polymorph", "Jhon Smith"))
+        assert outcome2.canonical_target == "John Smith"
+
+
 class TestTargetNullness:
     def test_both_targetless_with_same_unmatched_spell_dedupes(self):
         clock = FakeClock()

@@ -65,6 +65,48 @@ class Recommendation(RuleOutput):
     message: str
 
 
+@dataclass(frozen=True)
+class RuleDecisionContext:
+    """Everything the rule engine needs to decide what to do about one cast.
+
+    Built upstream by the pipeline after spell-DB lookup and dedupe. The
+    engine itself does no DB queries, no dedupe, no temporal state — given
+    the same context, `decide()` returns the same answer. This makes the
+    engine trivially unit-testable: construct a literal context, call
+    decide, assert.
+
+    Only matched casts reach decide() (unmatched ones are filtered upstream),
+    so `spell` is always non-null.
+    """
+
+    # The matched spell from the DB. Source of truth for severity, phrase,
+    # canonical name. Set by the pipeline after the dedupe lookup.
+    spell: "Spell"
+
+    # The cast event itself. `cast.target` is the canonical (roster-
+    # resolved) name when canonical_target is set, otherwise the raw OCR.
+    cast: "CastEvent"
+
+    # Roster-canonical form of the target, or None if no roster match (or
+    # no target at all). Redundant with cast.target after pipeline rewrite,
+    # but kept as the explicit "this was canonicalized" signal — handy for
+    # policy decisions that care about "is this teammate or boss?".
+    canonical_target: str | None = None
+
+    # Counters for `spell` that the player can use AND that are currently
+    # off cooldown. Populated by the pipeline after consulting the cooldown
+    # watcher (Phase F). Empty until then; once populated, Phase E's
+    # decide() emits a Recommendation in preference to a generic Alert.
+    available_counters: list["Counter"] = field(default_factory=list)
+
+    # Wider context the engine may consult for non-trivial decisions.
+    dungeon: str | None = None
+    player_class: str | None = None
+    player_spec: str | None = None
+    cooldowns: dict[str, float] = field(default_factory=dict)
+    roster: list[str] = field(default_factory=list)
+
+
 @dataclass
 class ScreenContext:
     """Aggregated screen state, owned and mutated by the pipeline worker thread.
@@ -237,6 +279,7 @@ __all__ = [
     "RuleOutput",
     "Alert",
     "Recommendation",
+    "RuleDecisionContext",
     "ScreenContext",
     "Spell",
     "Counter",

@@ -1,0 +1,11 @@
+# Global spells + rules — loaded regardless of which dungeon is active.
+# Use this for cast bars that appear across multiple dungeons (e.g. shared
+# trash mechanics) or for callouts you always want, regardless of context.
+#
+# The "Interrupted!" cast-bar text is handled by a built-in matcher in
+# wow_alert/rules.py (Severity.IGNORE), not here — no need to author it.
+#
+# Schema: same as a dungeon file, minus the `dungeon:` header.
+
+spells: []
+rules: []
