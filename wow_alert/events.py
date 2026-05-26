@@ -105,6 +105,10 @@ class RuleDecisionContext:
     player_spec: str | None = None
     cooldowns: dict[str, float] = field(default_factory=dict)
     roster: list[str] = field(default_factory=list)
+    # canonical roster name -> "tank" | "healer" | "dps". Members whose
+    # role wasn't identified during calibration are absent — a missing
+    # entry means "unknown", not "this member isn't a tank/healer/dps".
+    roles: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -121,6 +125,10 @@ class ScreenContext:
 
     # Extended context — populated only when a roster / cooldown analyzer is wired in.
     roster: list[str] = field(default_factory=list)
+    # canonical roster name -> role token. Authored by calibration (LLM
+    # detects, user confirms via dropdown). Members whose role is unknown
+    # are simply absent from the dict.
+    roles: dict[str, str] = field(default_factory=dict)
     dungeon: str | None = None
     cooldown_manager_bbox: BBox | None = None
     cooldowns: dict[str, float] = field(default_factory=dict)

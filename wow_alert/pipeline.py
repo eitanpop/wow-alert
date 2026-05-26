@@ -106,6 +106,25 @@ class PipelineWorker(QObject):
         successful capture. Callable from any thread."""
         return self._latest_frame
 
+    def update_calibration_context(
+        self,
+        roster: list[str],
+        dungeon: str | None,
+        roles: dict[str, str],
+    ) -> None:
+        """Push fresh calibration data into the screen context.
+
+        Called from the main thread when a new calibration is applied
+        (startup-load and after the user accepts a fresh calibration).
+        The worker thread reads these fields when building a
+        RuleDecisionContext for each new cast; Python's GIL is enough
+        coherence here since updates are rare and the reads use a single
+        attribute access per field.
+        """
+        self._context.roster = list(roster)
+        self._context.dungeon = dungeon
+        self._context.roles = dict(roles)
+
     @Slot(bool)
     def set_preview_enabled(self, value: bool) -> None:
         """Toggle the per-tick `frame_ready` emit.
@@ -258,6 +277,7 @@ class PipelineWorker(QObject):
                 player_spec=self._context.player_spec,
                 cooldowns=dict(self._context.cooldowns),
                 roster=list(self._context.roster),
+                roles=dict(self._context.roles),
             )
             try:
                 output = self._deps.rule_engine.decide(decision_ctx)

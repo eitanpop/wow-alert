@@ -109,14 +109,20 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         target_fps=config.target_fps,
         preview_enabled=config.show_preview,
     )
-    def apply_calibration(roster: list[str], dungeon: str | None) -> None:
+    def apply_calibration(
+        roster: list[str],
+        dungeon: str | None,
+        roles: dict[str, str],
+    ) -> None:
         """Push a fresh calibration into the components that use it.
 
         Wired from MainWindow's calibration flow: called once at startup
         when an existing calibration is loaded, and again whenever the
         user accepts a new calibration. Roster goes to both spell_db and
         deduper; dungeon triggers a reload from `config/dungeons/` so
-        only that dungeon's spells (plus globals) are active.
+        only that dungeon's spells (plus globals) are active; roles flow
+        into the pipeline's screen context so the rule engine can apply
+        role-aware predicates (target_role: tank, etc.).
         """
         spell_db.set_roster(roster)
         deduper.set_roster(roster)
@@ -125,6 +131,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
             apply_counter_filter(spells, config.player_class, config.player_spec)
         )
         rule_engine.set_rules(rules)
+        worker.update_calibration_context(roster, dungeon, roles)
 
     window = MainWindow(
         worker,

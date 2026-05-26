@@ -81,7 +81,9 @@ class MainWindow(QMainWindow):
         worker: PipelineWorker,
         alert_player: PyttsxWinsoundAlertPlayer,
         show_preview: bool = True,
-        on_calibration_apply: Callable[[list[str], str | None], None] | None = None,
+        on_calibration_apply: Callable[
+            [list[str], str | None, dict[str, str]], None
+        ] | None = None,
     ):
         super().__init__()
         self.setWindowTitle("wow-alert — cast bar awareness")
@@ -390,7 +392,9 @@ class MainWindow(QMainWindow):
         save to disk, optionally announce in the log pane."""
         self._calibration = cal
         if self._on_calibration_apply is not None:
-            self._on_calibration_apply(cal.roster(), cal.dungeon_name)
+            self._on_calibration_apply(
+                cal.roster(), cal.dungeon_name, cal.roles_by_name(),
+            )
         self._calibration_status.setText(self._format_calibration_status(cal))
         if persist:
             try:

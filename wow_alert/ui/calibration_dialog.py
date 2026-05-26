@@ -22,6 +22,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -40,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 
 _THUMBNAIL_HEIGHT = 48  # px; just enough to read the slot, keeps dialog compact
+
+# Role dropdown values. Index 0 is "unknown" — maps to None in the saved
+# Calibration. The display labels are user-friendly; the saved values are
+# the lowercase tokens the rule engine expects.
+_ROLE_OPTIONS = [
+    ("(unknown)", None),
+    ("Tank", "tank"),
+    ("Healer", "healer"),
+    ("DPS", "dps"),
+]
 
 
 class CalibrationDialog(QDialog):
@@ -62,10 +73,10 @@ class CalibrationDialog(QDialog):
 
         self._cal = cal
         self._source = source_frame
-        # (member_index, QLineEdit) — we keep indices rather than copying
-        # PartyMember objects so bbox + identity stay tied to the original
-        # detection.
-        self._name_edits: list[tuple[int, QLineEdit]] = []
+        # (member_index, QLineEdit, QComboBox) — we keep indices rather than
+        # copying PartyMember objects so bbox + identity stay tied to the
+        # original detection. The combo holds the role selector.
+        self._member_rows: list[tuple[int, QLineEdit, QComboBox]] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -98,10 +109,13 @@ class CalibrationDialog(QDialog):
         """Build a new Calibration from the edited field values. Call only
         after the dialog was accepted."""
         edited_members: list[PartyMember] = []
-        for idx, edit in self._name_edits:
+        for idx, name_edit, role_combo in self._member_rows:
             original = self._cal.party_members[idx]
-            name = edit.text().strip() or None
-            edited_members.append(PartyMember(name=name, bbox=original.bbox))
+            name = name_edit.text().strip() or None
+            role = role_combo.currentData()  # None for "(unknown)", else the lowercase token
+            edited_members.append(
+                PartyMember(name=name, role=role, bbox=original.bbox)
+            )
 
         dungeon = self._dungeon_edit.text().strip() or None
 
@@ -167,8 +181,21 @@ class CalibrationDialog(QDialog):
         name_edit = QLineEdit(member.name or "")
         name_edit.setPlaceholderText("Name (LLM couldn't read)" if not member.name else "")
         layout.addWidget(name_edit, stretch=1)
-        self._name_edits.append((idx, name_edit))
 
+        # Role selector. Pre-selected to whatever Pass 2 returned (or "unknown"
+        # if it couldn't tell). One click for the user to correct.
+        role_combo = QComboBox()
+        for label, value in _ROLE_OPTIONS:
+            role_combo.addItem(label, userData=value)
+        # Pick the index matching the LLM-returned role; default to 0 ("unknown").
+        for i, (_, value) in enumerate(_ROLE_OPTIONS):
+            if value == member.role:
+                role_combo.setCurrentIndex(i)
+                break
+        role_combo.setFixedWidth(100)
+        layout.addWidget(role_combo)
+
+        self._member_rows.append((idx, name_edit, role_combo))
         return row
 
     def _crop_pixmap(self, bbox: tuple[int, int, int, int]) -> QPixmap | None:

@@ -41,7 +41,7 @@ from typing import Any
 import cv2
 import numpy as np
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,11 @@ For each slot:
 - `name`: transcribe the player name character-by-character from the
   pixels you actually see. If ANY character is unclear, set name to null.
   Do not invent or fill in plausible-looking names.
+- `role`: one of "tank", "healer", "dps", or null. Look for visible cues:
+  small role icons (shield = tank, cross = healer, sword = dps); class
+  icons together with what you know about the spec; party-frame coloring
+  conventions. If you can't tell with high confidence, return null — the
+  user will fill it in. Do not guess from name alone.
 - `bbox`: [x1, y1, x2, y2] in pixels (relative to THIS cropped image,
   top-left origin), encompassing the full slot.
 
@@ -102,7 +107,11 @@ Return an empty list if no slots are legible.
 
 Respond with ONLY this JSON object, no prose, no code fences:
 {
-  "party_members": [{"name": "..." | null, "bbox": [x1, y1, x2, y2]}, ...],
+  "party_members": [
+    {"name": "..." | null, "role": "tank" | "healer" | "dps" | null,
+     "bbox": [x1, y1, x2, y2]},
+    ...
+  ],
   "notes": "any caveats"
 }
 """
@@ -133,7 +142,30 @@ class PartyMember(BaseModel):
     # name is None when the LLM couldn't read the slot with confidence —
     # prevents fabricated names from polluting the roster.
     name: str | None
+    # Best-effort role identification from the LLM. None means "unknown,
+    # ask the user in the edit dialog". Constrained values when set:
+    # "tank", "healer", "dps". Validators coerce common variants.
+    role: str | None = None
     bbox: tuple[int, int, int, int]
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _normalize_role(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        # Accept a few common spellings the LLM might produce.
+        if s in ("tank", "healer", "dps"):
+            return s
+        if s in ("heal", "healing"):
+            return "healer"
+        if s in ("dd", "damage", "damage dealer", "damage_dealer", "ranged", "melee"):
+            return "dps"
+        # Unknown value — treat as "couldn't determine" rather than failing
+        # the whole calibration on a single bad role string.
+        return None
 
 
 class CooldownIcon(BaseModel):
@@ -161,6 +193,19 @@ class Calibration(BaseModel):
         dropped — better to miss a target match than to canonicalize OCR
         text into a hallucinated teammate name."""
         return [m.name for m in self.party_members if m.name]
+
+    def roles_by_name(self) -> dict[str, str]:
+        """Map confidently-read name -> assigned role.
+
+        Only includes members whose role was identified (either by the LLM
+        or by the user in the edit dialog). Missing entries mean "role
+        unknown" — the rule engine should treat them as unconstrained
+        rather than as "not the tank/healer/dps".
+        """
+        return {
+            m.name: m.role for m in self.party_members
+            if m.name and m.role
+        }
 
 
 class CalibrationError(RuntimeError):
