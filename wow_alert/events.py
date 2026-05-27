@@ -95,7 +95,7 @@ class RuleDecisionContext:
 
     # Wider context the engine may consult for non-trivial decisions.
     dungeon: str | None = None
-    cooldowns: dict[str, bool] = field(default_factory=dict)
+    cooldowns: dict[int, bool] = field(default_factory=dict)
     roster: list[str] = field(default_factory=list)
     # canonical roster name -> "tank" | "healer" | "dps". Members whose
     # role wasn't identified during calibration are absent — a missing

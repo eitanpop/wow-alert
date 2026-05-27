@@ -12,7 +12,23 @@
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_rules.py -q 2>&1 | Select-Object -Last 25)",
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_examples_golden.py -v 2>&1 | Select-Object -Last 30)",
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 12)",
-      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.config import AppConfig; print\\('cli import OK'\\)\")"
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.config import AppConfig; print\\('cli import OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q -m \"not slow\" 2>&1 | Select-Object -Last 12)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_icon_matcher.py -v 2>&1 | Select-Object -Last 25)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_icon_matcher.py -q 2>&1 | Select-Object -Last 5)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.tools.fetch_icons import main; from wow_alert.icon_matcher import IconMatcher; from wow_alert.calibration import match_calibration_icons; from wow_alert.class_library import infer_class_spec; print\\('all imports OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q -m \"not slow\" 2>&1 | Select-Object -Last 15)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q -m \"not slow\" 2>&1 | Select-Object -Last 5)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.ui.main_window import MainWindow; print\\('imports OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q -m \"not slow\" 2>&1 | Select-Object -Last 6)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.ui.main_window import MainWindow; from wow_alert.icon_matcher import IconMatcher; print\\('imports OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q -m \"not slow\" 2>&1 | Select-Object -Last 10)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 8)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.ui.region_confirm_dialog import RegionConfirmDialog, _RegionEditor; print\\('imports OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_icon_label_dialog.py -v 2>&1 | Select-Object -Last 20)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.ui.main_window import MainWindow; from wow_alert.ui.icon_label_dialog import IconLabelDialog; print\\('imports OK'\\)\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_cooldown_grid.py -v 2>&1 | Select-Object -Last 15)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.cooldown_grid import find_icon_bboxes; from wow_alert.calibration import calibrate_read; print\\('imports OK'\\)\")"
     ]
   }
 }

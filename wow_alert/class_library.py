@@ -12,18 +12,18 @@ Example (`config/classes/paladin/holy.yaml`):
     spec: holy
 
     actions:
-      - id: bop
+      - id: blessing_of_protection
         label: "BOP"                 # what the alert says aloud
         category: defensive          # broad action type
         scope: single_target         # who it affects
         tags: [aggro_dropping]       # nuance — rules can filter on this
-        cooldown_icon: bop           # links to a cooldown_icon.action from calibration
+        spell_id: 1022               # canonical WoW spell ID; joins to icon DB
 
       - id: devotion_aura
         label: "Devotion Aura"
         category: defensive
         scope: party_wide
-        cooldown_icon: devotion_aura
+        spell_id: 465
 
 Three axes describe an action:
   - `category` — controlled vocab: `defensive`, `heal`, `dispel`,
@@ -33,10 +33,11 @@ Three axes describe an action:
   - `tags` — free-form list of strings; rules use `has_tag` / `lacks_tag`
     predicates to filter. Add tags as you author rules that need them.
 
-`cooldown_icon` is the join key to calibration: the OpenCV cooldown
-watcher reports availability keyed by the icon's action name, and rule
-priorities with class-action filters skip actions whose cooldown is
-non-zero.
+`spell_id` is the canonical WoW spell ID. It joins this action to the
+icon database at `config/icons/<spell_id>.png` (used by the calibration
+matcher to identify icons on the player's cooldown manager) and to the
+cooldown availability dict (rule engine skips actions whose spell_id is
+currently on cooldown).
 """
 from __future__ import annotations
 
@@ -64,11 +65,12 @@ class ClassAction(BaseModel):
         default_factory=list,
         description="Free-form tags rules can filter on (e.g. 'aggro_dropping').",
     )
-    cooldown_icon: str = Field(
+    spell_id: int = Field(
         description=(
-            "Joins to a CooldownIcon.action from calibration. The cooldown "
-            "watcher writes availability under this key; priorities with "
-            "class-action filters skip actions whose value is non-zero."
+            "Canonical WoW spell ID. Joins this action to its icon PNG at "
+            "config/icons/<spell_id>.png (used by the calibration matcher) "
+            "and to the cooldown availability dict (rule engine skips "
+            "actions whose spell_id is on cooldown)."
         ),
     )
 
@@ -100,6 +102,50 @@ class ClassActions(BaseModel):
     actions: list[ClassAction] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+def infer_class_spec(
+    config_dir: Path,
+    matched_spell_ids: set[int],
+) -> tuple[str | None, str | None, int]:
+    """Pick the class+spec whose library covers the most matched icons.
+
+    Walks every `config/classes/<class>/<spec>.yaml`, counts how many of
+    that file's spell IDs appear in `matched_spell_ids`, and returns the
+    winner. Tie-broken by alphabetical (class, spec) order — stable
+    across runs but otherwise arbitrary.
+
+    Returns `(class, spec, match_count)` or `(None, None, 0)` if no
+    class library matched any icon. The match count is exposed so the
+    caller can log "matched 7/8 of paladin/holy.yaml → loading Holy".
+    """
+    classes_dir = config_dir / "classes"
+    if not classes_dir.exists() or not matched_spell_ids:
+        return None, None, 0
+    best: tuple[int, str, str] | None = None
+    for class_dir in sorted(classes_dir.iterdir()):
+        if not class_dir.is_dir():
+            continue
+        for spec_path in sorted(class_dir.glob("*.yaml")):
+            try:
+                with spec_path.open("r", encoding="utf-8") as f:
+                    raw = yaml.safe_load(f) or {}
+                cfg = ClassActions.model_validate(raw)
+            except Exception:
+                logger.warning(
+                    "Skipping malformed class library %s during inference",
+                    spec_path,
+                )
+                continue
+            library_ids = {a.spell_id for a in cfg.actions}
+            count = len(library_ids & matched_spell_ids)
+            if count == 0:
+                continue
+            if best is None or count > best[0]:
+                best = (count, cfg.character_class, cfg.spec)
+    if best is None:
+        return None, None, 0
+    return best[1], best[2], best[0]
 
 
 def load_class_actions(

@@ -138,6 +138,26 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         )
         rule_engine.set_class_actions(class_actions)
 
+        # Surface actions whose spell_id wasn't matched to any icon on the
+        # player's cooldown bar. The rule engine is fail-closed on missing
+        # entries: untracked actions are treated as on cooldown and won't
+        # be recommended. Rules referencing them fall through to the
+        # spell's default phrase. The warning makes the gap visible so the
+        # user can either add the ability to their cooldown manager and
+        # recalibrate, or remove the action from the class library.
+        matched_ids = {
+            ic.spell_id for ic in cal.cooldown_icons if ic.spell_id is not None
+        }
+        unmatched = [a for a in class_actions if a.spell_id not in matched_ids]
+        for action in unmatched:
+            logger.warning(
+                "Action %r (spell_id=%d) has no matching cooldown icon — "
+                "rules that would bind it will fall through to the spell's "
+                "default phrase. Add it to your cooldown manager and "
+                "recalibrate to enable tracking.",
+                action.id, action.spell_id,
+            )
+
         spell_db.set_roster(roster)
         deduper.set_roster(roster)
         spells, rules = load_dungeon_config(config_dir, dungeon_name=dungeon)
@@ -160,8 +180,8 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
             logger.info("Catching up TTS cache for %d phrase(s)", len(needed))
             alert_player.prerender(sorted(needed))
 
-    # CooldownWatcher reads frames from the worker and writes availability
-    # into worker._context.cooldowns. MainWindow owns its QThread lifecycle.
+    # CooldownWatcher reads frames from the worker and pushes cooldown
+    # availability back via worker.set_cooldowns. MainWindow starts/stops it.
     cooldown_watcher = CooldownWatcher(worker)
 
     window = MainWindow(

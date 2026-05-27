@@ -75,16 +75,16 @@ Ironbark for druid.
 ### File: `config/classes/<class>/<spec>.yaml`
 
 ```yaml
-class: paladin              # must equal the parent directory name
-spec: holy                  # must equal the filename without .yaml
+class: paladin                     # must equal the parent directory name
+spec: holy                         # must equal the filename without .yaml
 
 actions:
-  - id: bop                 # stable id; referenced by rules
-    label: "BOP"            # short TTS-friendly callout name
-    category: defensive     # controlled vocab; see below
-    scope: single_target    # controlled vocab; see below
-    tags: [aggro_dropping]  # free-form list; rules filter via has_tag/lacks_tag
-    cooldown_icon: bop      # join key to the cooldown manager
+  - id: blessing_of_protection     # stable id; referenced by rules
+    label: "BOP"                   # short TTS-friendly callout name
+    category: defensive            # controlled vocab; see below
+    scope: single_target           # controlled vocab; see below
+    tags: [aggro_dropping]         # free-form list; rules filter via has_tag/lacks_tag
+    spell_id: 1022                 # canonical WoW spell ID; see the icon DB section
 ```
 
 ### Field reference
@@ -132,12 +132,10 @@ time.
 
 Invent new tags freely — the engine treats them as opaque strings.
 
-**`cooldown_icon`** — Joins this action to the cooldown manager region
-detected during calibration. The cooldown watcher writes availability to
-`cooldowns[cooldown_icon]`. When that value > 0 the action is treated as
-on cooldown and skipped by the rule engine when binding a class action.
-Match it to whatever name the calibration LLM identifies for that icon
-(lowercase + underscore is the safe convention).
+**`spell_id`** — The canonical WoW spell ID for this ability. Acts as
+the join key to the icon database and the cooldown availability dict.
+You can look spell IDs up on Wowhead — the URL `https://www.wowhead.com/spell=1022`
+is for Blessing of Protection, so `spell_id: 1022`.
 
 ### The cooldown manager
 
@@ -148,24 +146,45 @@ that aren't available.
 
 How it works end-to-end:
 
-1. **Calibration** uses a vision LLM to scan the player's action bars
-   and emit a list of cooldown icons with screen bboxes. Each icon gets
-   a stable name (e.g. `bop`, `devotion_aura`, `aura_mastery`).
-2. **Cooldown watcher** runs at ~2 FPS while the app is live. For each
-   calibrated icon bbox it samples the pixels and writes availability
-   into a shared dict `cooldowns[<icon_name>]` — `0` (or absent) means
-   ready, `> 0` means seconds remaining (approximate).
-3. **Rule engine** iterates the class library in file order whenever a
+1. **Icon database** lives at `config/icons/<spell_id>.png`. One PNG
+   per spell that any class library references. Populate it by running
+   `python -m wow_alert.tools.fetch_icons`, which scrapes Wowhead for
+   every spell_id declared in `config/classes/*/*.yaml` and writes the
+   icon. Idempotent — re-run after adding new actions to pick up only
+   the new icons.
+2. **Calibration** uses a vision LLM to locate the bounding box of the
+   cooldown manager region and the individual icon bboxes inside it.
+   It does NOT try to name the icons.
+3. **Icon matcher** (`wow_alert/icon_matcher.py`) then template-matches
+   each calibrated icon bbox against every PNG in `config/icons/` and
+   assigns a `spell_id` to the icon (or None when no reference scores
+   above the confidence threshold). This step happens locally on CPU
+   right after calibration — no extra LLM cost.
+4. **Class+spec auto-detection.** The app counts which icon spell_ids
+   appear in each `config/classes/<class>/<spec>.yaml` file and picks
+   the spec with the most matches. Replaces the previous LLM "guess
+   the class" pass, which was unreliable.
+5. **Cooldown watcher** runs at ~2 FPS. For each calibrated icon bbox
+   whose `spell_id` is set, it samples the pixels and writes
+   `cooldowns[spell_id] = True/False`. Icons that didn't match anything
+   (spell_id is None) are skipped — there's no key to write under.
+6. **Rule engine** iterates the class library in file order whenever a
    priority carries a class-action filter (`category` / `scope` /
    `has_tag` / `lacks_tag`). For each candidate action it checks
-   `cooldowns[action.cooldown_icon]`:
-   - If the value is missing or `<= 0` the action is **available** and
-     becomes a binding candidate (subject to the priority's filters).
-   - If the value is `> 0` the action is **silently skipped** —
-     iteration continues to the next library entry. No log, no audio.
-4. If no action passes all the priority's filters (including
-   availability), the priority fails and the next one is tried. If
-   every priority fails, the spell's default `phrase` fires.
+   `cooldowns[action.spell_id]`:
+   - False → available, action binds.
+   - True → on cooldown, skip this action, continue iterating.
+   - **Missing → treat as on cooldown (fail-closed).** Untracked
+     actions never bind. The rule walker continues to the next
+     priority; if every priority fails, the engine falls through to
+     the spell's default `phrase`.
+7. **Startup warning.** If a loaded class-library action has a
+   `spell_id` that doesn't appear in the calibrated icon set, the app
+   logs a WARNING at calibration time. The action is untracked, so
+   rules that would bind it will fall through to the spell's default
+   phrase instead. Fix by either adding the ability to your in-game
+   cooldown manager and recalibrating, or removing the action from
+   the class library.
 
 The practical consequence for authors: **a rule that asks for "any
 single-target defensive" will naturally cycle through BoP → Sac →
@@ -174,12 +193,19 @@ need to enumerate "if BoP on cooldown then Sac" — just list both
 defensives in the library (in preferred order) and write one rule that
 asks for `category: defensive, scope: single_target`.
 
-The `cooldown_icon` field on each class action is the manual join key.
-It must match the icon name the calibration LLM produced for that
-ability. If it doesn't match (typo, calibration relabeled the icon),
-the lookup returns "available" and the action is **never** treated as
-on cooldown — the rule will keep recommending it even when it's
-unusable.
+The `spell_id` field on each class action is the canonical join key.
+The icon matcher resolves on-screen icons to spell IDs locally (no LLM
+involved in this step), so as long as `config/icons/<spell_id>.png`
+exists and the in-game ability is on your cooldown bar, the join works.
+
+### Authoring workflow
+
+1. Add or edit an action in `config/classes/<class>/<spec>.yaml`. Set
+   `spell_id:` to the WoW spell ID (look it up on Wowhead — the URL is
+   `https://www.wowhead.com/spell=<id>`).
+2. Run `python -m wow_alert.tools.fetch_icons`. Idempotent — fetches
+   only the icons missing from `config/icons/`.
+3. Recalibrate in-game so the matcher runs against your bar.
 
 ### Complete example: Holy Paladin
 
@@ -188,56 +214,50 @@ class: paladin
 spec: holy
 
 actions:
-  - id: bop
+  - id: blessing_of_protection
     label: "BOP"
     category: defensive
     scope: single_target
     tags: [aggro_dropping]
-    cooldown_icon: bop
+    spell_id: 1022
 
   - id: blessing_of_sacrifice
     label: "Sac"
     category: defensive
     scope: single_target
-    cooldown_icon: blessing_of_sacrifice
+    spell_id: 6940
 
   - id: lay_on_hands
     label: "Lay on Hands"
     category: heal
     scope: single_target
     tags: [emergency_only]
-    cooldown_icon: lay_on_hands
+    spell_id: 633
 
   - id: devotion_aura
     label: "Devotion Aura"
     category: defensive
     scope: party_wide
-    cooldown_icon: devotion_aura
+    spell_id: 465
 
   - id: aura_mastery
     label: "Aura Mastery"
     category: defensive
     scope: party_wide
-    cooldown_icon: aura_mastery
+    spell_id: 31821
 
   - id: cleanse
     label: "Cleanse"
     category: dispel
     scope: single_target
-    tags: [magic, poison, disease]
-    cooldown_icon: cleanse
-
-  - id: rebuke
-    label: "Rebuke"
-    category: interrupt
-    scope: single_target
-    cooldown_icon: rebuke
+    tags: [magic]
+    spell_id: 4987
 
   - id: hammer_of_justice
     label: "Hammer of Justice"
     category: cc
     scope: single_target
-    cooldown_icon: hammer_of_justice
+    spell_id: 853
 ```
 
 ### Same shape for a different class — Mistweaver Monk
@@ -251,28 +271,21 @@ actions:
     label: "Cocoon"
     category: defensive
     scope: single_target
-    cooldown_icon: life_cocoon
+    spell_id: 116849
 
   - id: revival
     label: "Revival"
     category: heal
     scope: party_wide
     tags: [emergency_only]
-    cooldown_icon: revival
+    spell_id: 115310
 
   - id: detox
     label: "Detox"
     category: dispel
     scope: single_target
-    tags: [magic, poison, disease]
-    cooldown_icon: detox
-
-  - id: spear_hand_strike
-    label: "Spear Hand"
-    category: interrupt
-    scope: single_target
-    tags: [melee_range]
-    cooldown_icon: spear_hand_strike
+    tags: [magic]
+    spell_id: 218164
 ```
 
 ---
@@ -428,9 +441,11 @@ player's class library in file order and picks the first action that:
 4. Does NOT have the `lacks_tag` tag (if set)
 5. **Is not currently on cooldown.** Looked up via the cooldown manager
    (see §3 — "The cooldown manager"). An action is on cooldown when
-   `cooldowns[action.cooldown_icon] > 0`; missing keys and zero values
-   mean available. **On-cooldown actions are skipped silently** —
-   iteration continues to the next library entry.
+   `cooldowns[action.spell_id]` is True OR when the spell_id is missing
+   from the dict (fail-closed — untracked actions don't bind). **Skips
+   are silent** — iteration continues to the next library entry. The
+   startup warning lists untracked actions so the gap is visible
+   without you having to notice missing recommendations.
 
 If no action passes all of these, the priority fails and the next
 priority is tried. When an action binds it becomes available to
@@ -705,12 +720,14 @@ before it lands"` does not.
 `"Sac"` instead of `"Blessing of Sacrifice"`, `"AM"` if `"Aura Mastery"`
 trips up TTS, etc.
 
-**`cooldown_icon` is a manual join key.** The cooldown watcher writes
-`cooldowns[<icon-name-from-calibration>]`. If your class action's
-`cooldown_icon` doesn't match the calibration's icon name, the cooldown
-state defaults to "available" — priorities won't gate correctly.
-Coordinate the two by reviewing what the calibration LLM detected and
-naming `cooldown_icon` to match.
+**`spell_id` joins through the local icon DB.** The cooldown watcher
+writes `cooldowns[spell_id]`. The matcher only assigns a spell_id to a
+calibrated icon if it found a matching PNG in `config/icons/`. If the
+PNG is missing, the icon stays unidentified and the action looks
+always-available to the rule engine. Symptom is a recommendation that
+keeps firing. Fix: run `python -m wow_alert.tools.fetch_icons`. The
+calibration apply step also logs a per-action WARNING for any
+unmatched spell_id at the time the calibration is loaded.
 
 **`target_role` only matches confidently-assigned roles.** If
 calibration didn't assign a role for a roster member (the LLM was
@@ -795,22 +812,22 @@ then to the spell's generic warning.
 ### Class library snippet (relevant Holy Paladin entries)
 
 ```yaml
-- id: bop
+- id: blessing_of_protection
   label: "BOP"
   category: defensive
   scope: single_target
   tags: [aggro_dropping]
-  cooldown_icon: bop
+  spell_id: 1022
 - id: blessing_of_sacrifice
   label: "Sac"
   category: defensive
   scope: single_target
-  cooldown_icon: blessing_of_sacrifice
+  spell_id: 6940
 - id: devotion_aura
   label: "Devotion Aura"
   category: defensive
   scope: party_wide
-  cooldown_icon: devotion_aura
+  spell_id: 465
 ```
 
 ### Resulting behavior
@@ -839,7 +856,9 @@ When adding a new dungeon or class+spec:
 - [ ] Author rules where you want class-specific behavior
 - [ ] For each class+spec the dungeon will be played on, ensure
       `config/classes/<class>/<spec>.yaml` exists with the relevant
-      actions (interrupt, dispels, defensives)
+      actions (interrupt, dispels, defensives) and a `spell_id:` on each
+- [ ] Run `python -m wow_alert.tools.fetch_icons` to populate
+      `config/icons/<spell_id>.png` for every new spell_id
 - [ ] Tag actions appropriately (`aggro_dropping`, `magic`, etc.) so
       rule predicates can filter them
 - [ ] For tank busters, write a tank-specific rule with

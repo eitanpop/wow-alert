@@ -324,8 +324,10 @@ class RuleEngine:
              is set). Walks the player's library in file order and picks
              the first action satisfying category / scope / has_tag /
              lacks_tag whose cooldown is ready. An action is considered
-             on cooldown when ctx.cooldowns[action.cooldown_icon] is
-             True; absent keys are treated as available.
+             on cooldown when ctx.cooldowns[action.spell_id] is True
+             OR when the spell_id is missing from the dict — fail-closed
+             so untracked abilities don't get recommended. The startup
+             warning lists actions in that state.
              A failure here fails the priority outright; the bound
              action is exposed to templates as {action.label} /
              {action.id}.
@@ -367,7 +369,14 @@ class RuleEngine:
                 continue
             if prio.lacks_tag and prio.lacks_tag in action.tags:
                 continue
-            if ctx.cooldowns.get(action.cooldown_icon, False):
+            # Fail-closed on missing entries: if the cooldown watcher
+            # hasn't reported availability for this spell_id (either
+            # because the icon isn't on the player's bar or the matcher
+            # couldn't identify it), treat as unavailable. The startup
+            # warning surfaces which actions are in this state so the
+            # user can fix their setup. Better to miss a recommendation
+            # than to confidently recommend an unusable spell.
+            if ctx.cooldowns.get(action.spell_id, True):
                 continue
             return action
         return None

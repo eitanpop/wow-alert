@@ -28,6 +28,7 @@ APP_NAME = "wow-alert"
 USER_DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False, roaming=False))
 TTS_CACHE_DIR = USER_DATA_DIR / "tts_cache"
 CALIBRATION_PATH = USER_DATA_DIR / "calibration.yaml"
+CALIBRATION_ARTIFACTS_DIR = USER_DATA_DIR / "calibration_artifacts"
 
 
 def ensure_user_data_dirs() -> None:

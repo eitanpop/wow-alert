@@ -154,15 +154,21 @@ def spell(id_="poly", name="Polymorph", severity=Severity.DANGER, phrase="DANGER
     return Spell(id=id_, name=name, severity=severity, phrase=phrase)
 
 
+_NEXT_SPELL_ID = [1000]
+
+
 def action(id_, label=None, category="defensive", scope="single_target",
-           tags=None, cooldown_icon=None):
+           tags=None, spell_id=None):
+    if spell_id is None:
+        _NEXT_SPELL_ID[0] += 1
+        spell_id = _NEXT_SPELL_ID[0]
     return ClassAction(
         id=id_,
         label=label or id_.upper(),
         category=category,
         scope=scope,
         tags=tags or [],
-        cooldown_icon=cooldown_icon or id_,
+        spell_id=spell_id,
     )
 
 
@@ -170,6 +176,13 @@ def engine_with_rules(*rules):
     eng = RuleEngine()
     eng.set_rules(list(rules))
     return eng
+
+
+def all_available(*actions) -> dict[int, bool]:
+    """Mark every action's spell_id as available. Mirrors the cooldown
+    watcher's 'all clear' state — the rule engine is fail-closed on
+    missing keys, so tests have to explicitly say 'this is up'."""
+    return {a.spell_id: False for a in actions}
 
 
 class TestDecideFallback:
@@ -214,10 +227,12 @@ class TestClassActionFilters:
                 "do": "{action.id}",
             }],
         })
-        eng.set_class_actions([action("bop", label="BOP")])
+        actions = [action("bop", label="BOP")]
+        eng.set_class_actions(actions)
         ctx = RuleDecisionContext(
             spell=spell(), cast=cast(target="John"),
             canonical_target="John",
+            cooldowns=all_available(*actions),
         )
         out = eng.decide(ctx)
         assert isinstance(out, Recommendation)
@@ -236,20 +251,22 @@ class TestClassActionFilters:
                 "do": "{action.id}",
             }],
         })
-        eng.set_class_actions([
+        actions = [
             action("bop", label="BOP", tags=["aggro_dropping"]),
             action("sac", label="Sac"),
-        ])
+        ]
+        eng.set_class_actions(actions)
         ctx = RuleDecisionContext(
             spell=spell(), cast=cast(target="John"),
             canonical_target="John",
+            cooldowns=all_available(*actions),
         )
         out = eng.decide(ctx)
         assert isinstance(out, Recommendation)
         assert out.action == "sac"
 
     def test_on_cooldown_skips_action(self):
-        # First action on cooldown → engine skips to next.
+        # First action on cooldown → engine skips to next available one.
         eng = engine_with_rules({
             "on_cast": {"spell_id": "poly"},
             "priorities": [{
@@ -259,16 +276,38 @@ class TestClassActionFilters:
             }],
         })
         eng.set_class_actions([
-            action("bop", label="BOP", cooldown_icon="bop"),
-            action("sac", label="Sac", cooldown_icon="sac"),
+            action("bop", label="BOP", spell_id=1022),
+            action("sac", label="Sac", spell_id=6940),
         ])
         ctx = RuleDecisionContext(
             spell=spell(), cast=cast(),
-            cooldowns={"bop": 8.0},  # > 0 → on cooldown
+            cooldowns={1022: True, 6940: False},  # BoP on CD, Sac up
         )
         out = eng.decide(ctx)
         assert isinstance(out, Recommendation)
         assert out.action == "sac"  # bop was on cooldown
+
+    def test_missing_cooldown_entry_is_fail_closed(self):
+        # Untracked spell_id (no entry in cooldowns dict) is treated as
+        # on cooldown — never recommended. The priority then fails;
+        # in the absence of a catch-all priority the engine falls
+        # through to the spell-default Alert.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label}",
+                "do": "{action.id}",
+            }],
+        })
+        eng.set_class_actions([action("bop", label="BOP", spell_id=1022)])
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(),
+            cooldowns={},  # nothing tracked
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Alert)
+        assert out.phrase == "DANGER"  # spell-default phrase
 
     def test_priority_falls_through_to_catchall_when_no_action_available(self):
         eng = engine_with_rules({
@@ -387,11 +426,13 @@ class TestComposedScenario:
                 {"say": "Tank Buster on {target}"},
             ],
         })
-        eng.set_class_actions([
-            action("bop", label="BOP", scope="single_target", tags=["aggro_dropping"]),
-            action("sac", label="Sac", scope="single_target"),
-            action("aura", label="Devo Aura", scope="party_wide"),
-        ])
+        actions = [
+            action("bop", label="BOP", scope="single_target",
+                   tags=["aggro_dropping"], spell_id=1022),
+            action("sac", label="Sac", scope="single_target", spell_id=6940),
+            action("aura", label="Devo Aura", scope="party_wide", spell_id=465),
+        ]
+        eng.set_class_actions(actions)
 
         arcane_salvo = Spell(
             id="arcane_salvo", name="Arcane Salvo",
@@ -402,6 +443,7 @@ class TestComposedScenario:
         ctx = RuleDecisionContext(
             spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
             canonical_target="John", roles={"John": "tank"},
+            cooldowns=all_available(*actions),
         )
         out = eng.decide(ctx)
         assert isinstance(out, Recommendation)
@@ -412,7 +454,7 @@ class TestComposedScenario:
         ctx2 = RuleDecisionContext(
             spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
             canonical_target="John", roles={"John": "tank"},
-            cooldowns={"sac": 30.0},
+            cooldowns={**all_available(*actions), 6940: True},  # Sac on CD
         )
         out = eng.decide(ctx2)
         assert isinstance(out, Recommendation)
@@ -423,7 +465,7 @@ class TestComposedScenario:
         ctx3 = RuleDecisionContext(
             spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
             canonical_target="John", roles={"John": "tank"},
-            cooldowns={"sac": 30.0, "aura": 90.0},
+            cooldowns={**all_available(*actions), 6940: True, 465: True},
         )
         out = eng.decide(ctx3)
         assert isinstance(out, Alert)

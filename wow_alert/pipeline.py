@@ -91,7 +91,7 @@ class PipelineWorker(QObject):
         self._roster: list[str] = []
         self._dungeon: str | None = None
         self._roles: dict[str, str] = {}
-        self._cooldowns: dict[str, bool] = {}
+        self._cooldowns: dict[int, bool] = {}
         self._latest_frame: np.ndarray | None = None
         # Minimum wall time per tick. Cast bars last 1-10 s, so even 5 FPS
         # catches them; the default 10 FPS leaves headroom for jitter without
@@ -130,8 +130,8 @@ class PipelineWorker(QObject):
         self._roles = dict(roles)
 
     @Slot(dict)
-    def set_cooldowns(self, cooldowns: dict[str, bool]) -> None:
-        """Replace the cached cooldown availability map.
+    def set_cooldowns(self, cooldowns: dict[int, bool]) -> None:
+        """Replace the cached cooldown availability map (spell_id → on_cd).
 
         Called from the cooldown watcher (UI thread). The worker reads
         `self._cooldowns` when building RuleDecisionContext; same

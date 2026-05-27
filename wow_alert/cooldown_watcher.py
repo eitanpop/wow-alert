@@ -2,10 +2,16 @@
 
 A `QTimer` on the UI thread fires every `_POLL_MS` milliseconds. Each
 tick grabs the worker's most recent frame, samples each calibrated icon
-bbox, and pushes the resulting `dict[str, bool]` into the worker via
-`PipelineWorker.set_cooldowns`. The worker reads it when building a
-RuleDecisionContext; rule priorities with class-action filters skip
-actions whose entry is True.
+bbox, and pushes the resulting `dict[int, bool]` (keyed by the icon's
+spell_id, populated at calibration time by the icon matcher) into the
+worker via `PipelineWorker.set_cooldowns`. The worker reads it when
+building a RuleDecisionContext; rule priorities with class-action
+filters skip actions whose entry is True.
+
+Icons whose spell_id is None (unidentified — no high-confidence match
+in the local icon DB) are skipped: there's nothing to key the dict
+entry against, so the rule engine treats those actions as always
+available.
 
 Why UI-thread and not its own QThread: the watcher samples at ~2 FPS
 and each tick does a small HSV mean. Spinning up a dedicated QThread
@@ -98,9 +104,11 @@ class CooldownWatcher(QObject):
         frame = self._worker.latest_frame()
         if frame is None:
             return
-        cooldowns: dict[str, bool] = {}
+        cooldowns: dict[int, bool] = {}
         for icon in self._icons:
-            cooldowns[icon.action] = self._on_cooldown(frame, icon.bbox)
+            if icon.spell_id is None:
+                continue
+            cooldowns[icon.spell_id] = self._on_cooldown(frame, icon.bbox)
         # Pushed through a Qt slot so the worker (which lives on its own
         # thread) sees the dict assigned atomically from its own event
         # loop. Auto-detected connection type queues the call across

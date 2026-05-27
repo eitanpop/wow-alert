@@ -8,7 +8,9 @@ this scale a separate file would obscure rather than clarify the wiring.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
+import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtWidgets import (
@@ -28,19 +30,24 @@ from typing import Callable
 from wow_alert.audio import PyttsxWinsoundAlertPlayer
 from wow_alert.calibration import (
     Calibration,
+    CooldownIcon,
     LocateResult,
     calibrate_locate,
     calibrate_read,
     load_calibration,
     save_calibration,
 )
+from wow_alert.class_library import infer_class_spec, load_class_actions
+from wow_alert.config import REPO_ROOT
 from wow_alert.cooldown_watcher import CooldownWatcher
 from wow_alert.events import Alert
-from wow_alert.paths import CALIBRATION_PATH
+from wow_alert.icon_matcher import IconMatcher
+from wow_alert.paths import CALIBRATION_ARTIFACTS_DIR, CALIBRATION_PATH
 from wow_alert.pipeline import PipelineWorker
 from wow_alert.ui._background_runner import BackgroundRunner
 from wow_alert.ui.calibration_dialog import CalibrationDialog
 from wow_alert.ui.frame_widget import FrameWidget
+from wow_alert.ui.icon_label_dialog import IconLabelDialog
 from wow_alert.ui.log_widget import LogWidget
 from wow_alert.ui.region_confirm_dialog import RegionConfirmDialog
 
@@ -107,6 +114,11 @@ class MainWindow(QMainWindow):
         # region-confirm dialog so pass-2/3 uses the same image pass-1 saw).
         self._calibration_frame: np.ndarray | None = None
         self._calibration_locate: LocateResult | None = None
+        # Diagnostic info from the icon matcher, keyed by cooldown_icon
+        # index. Populated by _resolve_icons_and_spec, consumed by the
+        # icon-labeling dialog so it can show side-by-side references and
+        # pre-select the closest match even when below threshold.
+        self._last_match_diagnostics: list[dict] = []
 
         # Status bar shows the current calibration target ("Calibrated for:
         # John, Mary, Tank…") so the user can confirm they're configured for
@@ -297,9 +309,13 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_read_completed(self, cal: Calibration) -> None:
-        """Pass 2/3 done — open the name-edit dialog, save on accept."""
+        """Pass 2/3 done — match icons against the local DB, auto-detect
+        the class+spec from the matches, open the edit dialog, then the
+        icon-labeling dialog so the user can refine the matcher's
+        references against their own client rendering."""
         frame = self._calibration_frame
         if frame is not None:
+            cal = self._resolve_icons_and_spec(cal, frame)
             dialog = CalibrationDialog(cal, frame, parent=self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 cal = dialog.result_calibration()
@@ -307,8 +323,210 @@ class MainWindow(QMainWindow):
                 self.log_widget.info("calibration discarded — keeping previous")
                 self._finish_calibration_flow(success=False)
                 return
+            cal = self._label_icons(cal, frame)
         self._apply_calibration(cal, persist=True, log_to_pane=True)
         self._finish_calibration_flow(success=True)
+
+    def _label_icons(self, cal: Calibration, frame) -> Calibration:
+        """Open the icon-labeling dialog if there's a class library to
+        label against. Cancel keeps the calibration as-is (no reference
+        files written); accept writes per-icon PNGs and returns a
+        Calibration with the user-confirmed spell_ids."""
+        if not cal.player_class or not cal.player_spec:
+            self.log_widget.info(
+                "icon labeling skipped — no class/spec confirmed"
+            )
+            return cal
+        if not cal.cooldown_icons:
+            return cal
+        actions = load_class_actions(
+            REPO_ROOT / "config", cal.player_class, cal.player_spec,
+        )
+        if not actions:
+            self.log_widget.info(
+                "icon labeling skipped — class library empty for "
+                f"{cal.player_class}/{cal.player_spec}"
+            )
+            return cal
+        icon_dir = REPO_ROOT / "config" / "icons"
+        dialog = IconLabelDialog(
+            cal, frame, actions, icon_dir,
+            diagnostics=self._last_match_diagnostics,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.log_widget.info(
+                "icon labeling cancelled — keeping existing icon references"
+            )
+            return cal
+        labeled_cal, written = dialog.apply_labels()
+        self.log_widget.info(
+            f"icon labels applied: {written} reference PNG(s) written to "
+            f"config/icons/"
+        )
+        return labeled_cal
+
+    def _resolve_icons_and_spec(
+        self, cal: Calibration, frame,
+    ) -> Calibration:
+        """Run the icon matcher on the calibrated bboxes and override the
+        Calibration's player_class / player_spec with whatever class
+        library best fits the matched icons.
+
+        Surfaces both pieces of state in the log pane and saves debug
+        artifacts (per-icon crops + manifest) under
+        `%LOCALAPPDATA%\\wow-alert\\calibration_artifacts\\<timestamp>`
+        so you can inspect what the LLM bboxes captured when matching
+        underperforms.
+        """
+        icon_dir = REPO_ROOT / "config" / "icons"
+        matcher = IconMatcher(icon_dir)
+        if len(matcher) == 0:
+            self.log_widget.error(
+                "no icons in config/icons/ — cooldown tracking will be "
+                "disabled. Run: python -m wow_alert.tools.fetch_icons"
+            )
+            return cal
+
+        per_icon = self._match_with_diagnostics(cal, frame, matcher)
+        cal = cal.model_copy(
+            update={
+                "cooldown_icons": [ic for ic, _ in per_icon],
+            }
+        )
+        # Stash diagnostics for the labeling dialog. Indexed parallel to
+        # cal.cooldown_icons.
+        self._last_match_diagnostics = [d for _, d in per_icon]
+        artifact_dir = self._save_calibration_artifacts(frame, per_icon, matcher)
+        if artifact_dir is not None:
+            self.log_widget.info(f"saved calibration artifacts → {artifact_dir}")
+
+        matched_ids = {ic.spell_id for ic, _ in per_icon if ic.spell_id is not None}
+        total = len(per_icon)
+        self.log_widget.info(
+            f"icon matcher: {len(matched_ids)}/{total} icons identified"
+        )
+
+        cls, spec, count = infer_class_spec(REPO_ROOT / "config", matched_ids)
+        if cls and spec:
+            self.log_widget.info(
+                f"class auto-detect: {cls}/{spec} ({count} icon matches)"
+            )
+            cal = cal.model_copy(update={"player_class": cls, "player_spec": spec})
+        else:
+            self.log_widget.error(
+                "could not auto-detect class+spec from icons — pick "
+                "manually in the next dialog"
+            )
+        return cal
+
+    def _match_with_diagnostics(self, cal: Calibration, frame, matcher: IconMatcher):
+        """Run the matcher per icon and emit a UI log line for each.
+
+        Returns a list of `(updated_CooldownIcon, diagnostic_dict)`. The
+        diagnostic carries the bbox-crop image, closest spell_id, score,
+        and passed flag so the artifact-saving step doesn't have to re-run
+        the matcher.
+        """
+        h, w = frame.shape[:2]
+        out = []
+        for idx, icon in enumerate(cal.cooldown_icons):
+            x1, y1, x2, y2 = icon.bbox
+            x1c, y1c = max(0, min(x1, w)), max(0, min(y1, h))
+            x2c, y2c = max(0, min(x2, w)), max(0, min(y2, h))
+            if x2c - x1c < 4 or y2c - y1c < 4:
+                self.log_widget.error(
+                    f"  icon #{idx} at {icon.bbox}: degenerate bbox"
+                )
+                out.append((icon, {"crop": None, "closest": None, "score": 0.0, "passed": False}))
+                continue
+            crop = frame[y1c:y2c, x1c:x2c]
+            closest, score, passed = matcher.match(crop)
+            diag = {"crop": crop, "closest": closest, "score": score, "passed": passed}
+            if passed:
+                self.log_widget.info(
+                    f"  icon #{idx} at {icon.bbox} → spell_id {closest} (score {score:.2f}) MATCH"
+                )
+                out.append((CooldownIcon(bbox=icon.bbox, spell_id=closest), diag))
+            else:
+                closest_str = str(closest) if closest is not None else "—"
+                self.log_widget.error(
+                    f"  icon #{idx} at {icon.bbox}: closest={closest_str} "
+                    f"score={score:.2f} (threshold {matcher.threshold:.2f}) BELOW"
+                )
+                out.append((icon, diag))
+        return out
+
+    def _save_calibration_artifacts(self, frame, per_icon, matcher: IconMatcher):
+        """Write per-icon crops + a manifest text file under
+        `CALIBRATION_ARTIFACTS_DIR/<timestamp>/`. Returns the directory
+        path on success or None on failure (silent — diagnostics
+        shouldn't break calibration)."""
+        try:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            artifact_dir = CALIBRATION_ARTIFACTS_DIR / stamp
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            # Full frame so you can verify Pass 1's region detection.
+            cv2.imwrite(str(artifact_dir / "frame.png"), frame)
+            # Per-icon: crop + reference of the closest match (when known).
+            manifest_lines = [
+                f"# Calibration debug ({stamp})",
+                f"# Matcher threshold: {matcher.threshold:.2f}",
+                "# idx  bbox                                   closest_spell_id  score  passed  crop_file",
+            ]
+            for idx, (icon, diag) in enumerate(per_icon):
+                crop = diag["crop"]
+                closest = diag["closest"]
+                score = diag["score"]
+                passed = diag["passed"]
+                crop_name = f"icon_{idx:02d}_bbox.png"
+                if crop is not None:
+                    cv2.imwrite(str(artifact_dir / crop_name), crop)
+                if closest is not None:
+                    ref_src = REPO_ROOT / "config" / "icons" / f"{closest}.png"
+                    if ref_src.exists():
+                        ref_dst = artifact_dir / f"icon_{idx:02d}_closest_{closest}.png"
+                        ref_dst.write_bytes(ref_src.read_bytes())
+                manifest_lines.append(
+                    f"{idx:>3d}  {str(icon.bbox):<38}  "
+                    f"{str(closest):<16}  {score:5.2f}  {str(passed):<6}  {crop_name}"
+                )
+            (artifact_dir / "manifest.txt").write_text(
+                "\n".join(manifest_lines), encoding="utf-8",
+            )
+            return artifact_dir
+        except Exception as exc:
+            logger.warning("Failed to save calibration artifacts: %s", exc)
+            return None
+
+    def _log_per_action_match_state(
+        self, cal: Calibration, matched_ids: set[int],
+    ) -> None:
+        """Emit one log line per class-library action: tracked vs untracked.
+
+        Tracked actions (spell_id matched on the player's bar) get an
+        info line. Untracked actions get an error line — they won't be
+        recommended; rules referencing them will fall through to the
+        spell's default phrase. Helps the user see at a glance which
+        abilities the engine can reason about for this character.
+        """
+        if not cal.player_class or not cal.player_spec:
+            return
+        actions = load_class_actions(
+            REPO_ROOT / "config", cal.player_class, cal.player_spec,
+        )
+        if not actions:
+            return
+        for a in actions:
+            if a.spell_id in matched_ids:
+                self.log_widget.info(
+                    f"  tracked: {a.id} (spell_id={a.spell_id})"
+                )
+            else:
+                self.log_widget.error(
+                    f"  UNTRACKED: {a.id} (spell_id={a.spell_id}) — "
+                    f"rules using this will fall through to spell default"
+                )
 
     @Slot(str)
     def _on_calibration_failed(self, message: str) -> None:
@@ -394,6 +612,14 @@ class MainWindow(QMainWindow):
             )
             if cal.notes:
                 self.log_widget.info(f"calibration notes: {cal.notes}")
+            # Per-action tracked/untracked. Runs here (not in
+            # _resolve_icons_and_spec) so it fires regardless of whether
+            # auto-detect succeeded — the dialog may have set the spec
+            # manually after we failed to infer it.
+            matched_ids = {
+                ic.spell_id for ic in cal.cooldown_icons if ic.spell_id is not None
+            }
+            self._log_per_action_match_state(cal, matched_ids)
 
     @staticmethod
     def _format_calibration_status(cal: Calibration | None) -> str:

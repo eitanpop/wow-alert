@@ -1,6 +1,6 @@
 """LLM-driven screen calibration.
 
-Three-pass design.
+Two-pass LLM design (plus one CV step).
 
   Pass 1 — "locate". Send the full screenshot. Ask Claude to return two
            bboxes only: where the party frames are and where the cooldown
@@ -8,24 +8,23 @@ Three-pass design.
   Pass 2 — "read party". Crop the source frame to the party region (with
            padding) and resend. The crop fills the LLM's visual field, so
            small text reads accurately.
-  Pass 3 — "read cooldowns". Same, for the cooldown manager crop.
+  CV step — "find icons". Within the user-confirmed cooldown region,
+           OpenCV contour detection finds per-icon bboxes. Replaces a
+           previous LLM call that proved imprecise — it routinely
+           returned bboxes that cut across icon seams.
 
-Why three passes instead of one: on ultrawide / dual-monitor captures, the
-party frame is a tiny fraction of the image. Even at full source resolution,
-the LLM can't reliably transcribe text that occupies <5% of the visual
-field. Cropping first puts each UI element in its own focused image.
+Why CV over LLM for icon localization: WoW spell icons are high-
+saturation square sprites on a low-saturation background, which makes
+them trivial to isolate with `cv2.findContours` on a saturation-
+thresholded mask. The LLM eyeballs positions and lands within a few
+pixels of the right spot, but a few pixels is enough to produce half-
+and-half crops when icons are tightly packed.
 
-Cost: ~3x a single-pass call, still under $0.05 per calibration with Sonnet
-4.6. Latency: ~10-15 s total (passes are serial; could be parallelized
-later if needed). Calibration runs rarely so this is fine.
+Cost: one LLM call removed. Latency: ~5 s saved.
 
-Bbox bookkeeping: every pass returns bboxes in the coordinate space of the
-image we sent. Two transforms apply per pass — the encoding scale
-(downscale applied by `_encode_for_api` to fit the 5 MB limit) and, for
-passes 2/3, the crop origin in source-frame coordinates. After unscaling
-and offsetting, every bbox in the returned `Calibration` is in the
-original full-resolution frame's pixel space — directly usable by the
-OpenCV cooldown watcher.
+Bbox bookkeeping: every coordinate in the returned `Calibration` is in
+the original full-resolution frame's pixel space, so the OpenCV cooldown
+watcher and icon matcher can use them directly.
 """
 from __future__ import annotations
 
@@ -144,53 +143,6 @@ Respond with ONLY this JSON object, no prose, no code fences:
 """
 
 
-_PROMPT_READ_COOLDOWNS = """\
-This image is a tight crop of a World of Warcraft cooldown-manager UI —
-typically a WeakAura showing spell/ability icons that grey out on cooldown.
-
-For each icon:
-- `bbox`: [x1, y1, x2, y2] in pixels (relative to THIS cropped image,
-  top-left origin), encompassing just the icon square.
-- `action`: the spell or ability name if you can identify it from the
-  icon art (e.g. "Blessing of Protection", "Purge", "Kick"). If you
-  don't recognize the icon, use "unknown". Do not guess.
-
-The icon set itself reveals the player's class (and usually spec) far
-better than anything else on screen, so also report:
-- `player_class`: one of the canonical lowercase tokens — death_knight,
-  demon_hunter, druid, evoker, hunter, mage, monk, paladin, priest,
-  rogue, shaman, warlock, warrior. Null if uncertain.
-- `player_spec`: the in-class spec token — examples:
-    death_knight: blood, frost, unholy
-    demon_hunter: havoc, vengeance
-    druid:        balance, feral, guardian, restoration
-    evoker:       devastation, preservation, augmentation
-    hunter:       beast_mastery, marksmanship, survival
-    mage:         arcane, fire, frost
-    monk:         brewmaster, mistweaver, windwalker
-    paladin:      holy, protection, retribution
-    priest:       discipline, holy, shadow
-    rogue:        assassination, outlaw, subtlety
-    shaman:       elemental, enhancement, restoration
-    warlock:      affliction, demonology, destruction
-    warrior:      arms, fury, protection
-  Spec is harder to nail than class — only commit when the icons include
-  a spec-defining ability (e.g. Beacon of Light → holy paladin,
-  Avenger's Shield → protection paladin, Renewing Mist → mistweaver
-  monk). Null otherwise.
-
-Return an empty list if you can't make out any icons.
-
-Respond with ONLY this JSON object, no prose, no code fences:
-{
-  "cooldown_icons": [{"action": "...", "bbox": [x1, y1, x2, y2]}, ...],
-  "player_class": "..." | null,
-  "player_spec": "..." | null,
-  "notes": "any caveats"
-}
-"""
-
-
 class PartyMember(BaseModel):
     # name is None when the LLM couldn't read the slot with confidence —
     # prevents fabricated names from polluting the roster.
@@ -222,8 +174,16 @@ class PartyMember(BaseModel):
 
 
 class CooldownIcon(BaseModel):
-    action: str
+    """One cooldown-manager icon located during calibration.
+
+    `bbox` comes from the LLM's region read. `spell_id` is populated by
+    the IconMatcher after calibration finishes — None means the matcher
+    couldn't identify which spell this icon represents (no high-enough
+    score against any reference PNG in `config/icons/`).
+    """
+
     bbox: tuple[int, int, int, int]
+    spell_id: int | None = None
 
 
 class Calibration(BaseModel):
@@ -393,35 +353,25 @@ def calibrate_read(
             notes.append(f"party: {parsed['notes']}")
 
     cooldown_icons: list[dict] = []
-    player_class: str | None = None
-    player_spec: str | None = None
     if cooldown_region is not None:
+        from wow_alert.cooldown_grid import find_icon_bboxes
+
         crop, crop_origin = _crop_with_padding(image_bgr, cooldown_region)
-        parsed = _call_pass(client, crop, _PROMPT_READ_COOLDOWNS)
-        scale = parsed.get("_encoding_scale", 1.0)
-        for icon in parsed.get("cooldown_icons", []) or []:
-            bbox = _resolve_bbox(icon.get("bbox"), scale, offset=crop_origin)
-            if bbox is None:
-                continue
+        local_bboxes = find_icon_bboxes(crop)
+        ox, oy = crop_origin
+        for x1, y1, x2, y2 in local_bboxes:
+            # Translate crop-local coords back to source-frame coords.
             cooldown_icons.append({
-                "action": icon.get("action") or "unknown",
-                "bbox": bbox,
+                "bbox": (x1 + ox, y1 + oy, x2 + ox, y2 + oy),
             })
-        # Class/spec ride along with the cooldown-icon read: the icon set
-        # is the most class-defining signal on screen, and Pass 3 sees it
-        # at native size in the crop. Validators on Calibration normalize
-        # and reject unknowns.
-        player_class = parsed.get("player_class")
-        player_spec = parsed.get("player_spec")
-        if parsed.get("notes"):
-            notes.append(f"cooldowns: {parsed['notes']}")
+        notes.append(
+            f"cooldowns: cv2 contour detection found {len(local_bboxes)} icons"
+        )
 
     payload = {
         "party_members": party_members,
         "cooldown_icons": cooldown_icons,
         "dungeon_name": dungeon_name,
-        "player_class": player_class,
-        "player_spec": player_spec,
         "notes": " | ".join(notes),
     }
     try:
