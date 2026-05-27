@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -28,16 +28,17 @@ from typing import Callable
 from wow_alert.audio import PyttsxWinsoundAlertPlayer
 from wow_alert.calibration import (
     Calibration,
-    CalibrationError,
     LocateResult,
     calibrate_locate,
     calibrate_read,
     load_calibration,
     save_calibration,
 )
+from wow_alert.cooldown_watcher import CooldownWatcher
 from wow_alert.events import Alert
 from wow_alert.paths import CALIBRATION_PATH
 from wow_alert.pipeline import PipelineWorker
+from wow_alert.ui._background_runner import BackgroundRunner
 from wow_alert.ui.calibration_dialog import CalibrationDialog
 from wow_alert.ui.frame_widget import FrameWidget
 from wow_alert.ui.log_widget import LogWidget
@@ -46,44 +47,14 @@ from wow_alert.ui.region_confirm_dialog import RegionConfirmDialog
 logger = logging.getLogger(__name__)
 
 
-class _BackgroundRunner(QObject):
-    """Generic 'run any callable on a QThread, emit signals on completion'.
-
-    Used for both calibration phases (locate, read). Kept here rather than
-    in `calibration.py` so the calibration module stays free of Qt deps and
-    remains unit-testable without a Qt event loop.
-    """
-
-    completed = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, fn: Callable[[], object], parent: QObject | None = None):
-        super().__init__(parent)
-        self._fn = fn
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            result = self._fn()
-        except CalibrationError as exc:
-            self.failed.emit(str(exc))
-            return
-        except Exception as exc:  # pragma: no cover — defensive only
-            logger.exception("Unexpected calibration failure")
-            self.failed.emit(f"Unexpected error: {exc}")
-            return
-        self.completed.emit(result)
-
-
 class MainWindow(QMainWindow):
     def __init__(
         self,
         worker: PipelineWorker,
         alert_player: PyttsxWinsoundAlertPlayer,
         show_preview: bool = True,
-        on_calibration_apply: Callable[
-            [list[str], str | None, dict[str, str]], None
-        ] | None = None,
+        on_calibration_apply: Callable[[Calibration], None] | None = None,
+        cooldown_watcher: CooldownWatcher | None = None,
     ):
         super().__init__()
         self.setWindowTitle("wow-alert — cast bar awareness")
@@ -92,6 +63,7 @@ class MainWindow(QMainWindow):
         self._worker = worker
         self._alert_player = alert_player
         self._on_calibration_apply = on_calibration_apply
+        self._cooldown_watcher = cooldown_watcher
 
         self.frame_widget = FrameWidget()
         self.log_widget = LogWidget()
@@ -116,6 +88,11 @@ class MainWindow(QMainWindow):
         self._thread.started.connect(self._worker.run)
         self._worker.stopped.connect(self._thread.quit)
 
+        # Cooldown watcher lives on the UI thread (QTimer-driven). It
+        # reads the worker's latest_frame and pushes a dict[str, bool]
+        # to the worker via set_cooldowns. Lifecycle is start() / stop()
+        # alongside the pipeline thread.
+
         self._worker.frame_ready.connect(self.frame_widget.update_frame)
         self._worker.alert.connect(self._on_alert)
         self._worker.error.connect(self._on_error)
@@ -124,7 +101,7 @@ class MainWindow(QMainWindow):
         # Calibration plumbing. The QThread is created lazily for each
         # phase, so app startup pays no cost when calibration is never used.
         self._calibration_thread: QThread | None = None
-        self._calibration_runner: _BackgroundRunner | None = None
+        self._calibration_runner: BackgroundRunner | None = None
         self._calibration: Calibration | None = None
         # Per-run state for the two-phase flow (frame stays valid across the
         # region-confirm dialog so pass-2/3 uses the same image pass-1 saw).
@@ -168,7 +145,7 @@ class MainWindow(QMainWindow):
         self._preview_cb.toggled.connect(self._on_preview_toggle)
 
         self._debug_cb = QCheckBox("Debug")
-        self._debug_cb.setChecked(True)  # default on per current iteration
+        self._debug_cb.setChecked(True)
         self._debug_cb.toggled.connect(self._on_debug_toggle)
 
         self._calibrate_btn = QPushButton("Calibrate")
@@ -191,10 +168,14 @@ class MainWindow(QMainWindow):
 
     def start(self) -> None:
         self._thread.start()
+        if self._cooldown_watcher is not None:
+            self._cooldown_watcher.start()
         self.log_widget.info("worker started")
 
     def closeEvent(self, event) -> None:
         self._worker.stop()
+        if self._cooldown_watcher is not None:
+            self._cooldown_watcher.stop()
         self._thread.quit()
         self._thread.wait(2000)
         super().closeEvent(event)
@@ -342,9 +323,9 @@ class MainWindow(QMainWindow):
         *,
         on_completed: Callable,
     ) -> None:
-        """Spawn a QThread + `_BackgroundRunner` to run `fn`, wire signals."""
+        """Spawn a QThread + `BackgroundRunner` to run `fn`, wire signals."""
         thread = QThread(self)
-        runner = _BackgroundRunner(fn)
+        runner = BackgroundRunner(fn)
         runner.moveToThread(thread)
         thread.started.connect(runner.run)
         runner.completed.connect(on_completed)
@@ -391,10 +372,13 @@ class MainWindow(QMainWindow):
         downstream components (deduper, spell DB), update status, optionally
         save to disk, optionally announce in the log pane."""
         self._calibration = cal
+        # Push the cooldown icon set to the watcher first so the dict is
+        # populated by the time the rule engine starts evaluating against
+        # the new spell set below.
+        if self._cooldown_watcher is not None:
+            self._cooldown_watcher.set_icons(cal.cooldown_icons)
         if self._on_calibration_apply is not None:
-            self._on_calibration_apply(
-                cal.roster(), cal.dungeon_name, cal.roles_by_name(),
-            )
+            self._on_calibration_apply(cal)
         self._calibration_status.setText(self._format_calibration_status(cal))
         if persist:
             try:

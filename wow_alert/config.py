@@ -30,17 +30,15 @@ class AppConfig(BaseModel):
     )
     imgsz: int = Field(
         default=1280,
+        ge=64,
         description=(
             "YOLO inference resolution (long side, pixels). Must match the "
             "value the model was trained at to avoid distribution shift."
         ),
     )
-    display_width: int = Field(
-        default=1280,
-        description="Default width (pixels) of the live frame view in the UI.",
-    )
     window_refresh_interval: float = Field(
         default=1.0,
+        gt=0.0,
         description=(
             "Seconds between re-checks of the captured window's screen "
             "position and size. Larger = less overhead; smaller = faster "
@@ -49,6 +47,8 @@ class AppConfig(BaseModel):
     )
     target_fps: int = Field(
         default=10,
+        ge=1,
+        le=120,
         description=(
             "Upper bound on pipeline tick rate. Cast bars last 1-10 s, so 10 "
             "FPS is plenty to catch them; capping leaves GPU headroom for "
@@ -58,6 +58,7 @@ class AppConfig(BaseModel):
     )
     lost_track_tolerance_s: float = Field(
         default=0.5,
+        ge=0.0,
         description=(
             "How long an existing track survives without a detection before "
             "being dropped. Tuned in seconds so it scales correctly with "
@@ -134,20 +135,9 @@ class AppConfig(BaseModel):
     dungeon: str | None = Field(
         default=None,
         description=(
-            "If set, only spells whose `dungeon` field matches (or is null) "
-            "are loaded into the matcher."
+            "Pre-calibration dungeon hint. The active calibration's "
+            "dungeon_name supersedes this once one is loaded."
         ),
-    )
-    player_class: str | None = Field(
-        default=None,
-        description=(
-            "If set together with `player_spec`, restricts counter actions to "
-            "those this class can perform."
-        ),
-    )
-    player_spec: str | None = Field(
-        default=None,
-        description="Player spec; pairs with `player_class` for counter filtering.",
     )
 
     @field_validator("model_path", "tts_cache_dir", mode="before")

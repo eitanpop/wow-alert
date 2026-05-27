@@ -12,7 +12,6 @@
 #   cast_by:      [boss | mob | ...]
 #   school:       spell school
 #   interruptible: bool
-#   counters:     list of {class, spec, action}
 #   notes:        free-text
 
 dungeon: "Windrunner Spire"
@@ -36,13 +35,6 @@ spells:
     cast_by: mob
     school: shadow
     interruptible: false
-    counters:
-      - class: healer
-        spec: any
-        action: magic_dispel
-      - class: any
-        spec: any
-        action: stop
     notes: "Restless Steward. Very dangerous magic DoT; stop the cast/effect or dispel quickly."
 
   - id: windrunner_spire_arcane_salvo
@@ -253,16 +245,6 @@ spells:
     cast_by: boss
     school: shadow
     interruptible: false
-    counters:
-      - class: mage
-        spec: any
-        action: remove_curse
-      - class: druid
-        spec: any
-        action: remove_corruption
-      - class: shaman
-        spec: any
-        action: cleanse_spirit
     notes: "Derelict Duo. Curse spawns Dark Entity fixates; curse dispel removes the entity."
 
   - id: windrunner_spire_splattering_spew
@@ -505,7 +487,143 @@ spells:
     interruptible: false
     notes: "The Restless Heart tank hit."
 
-# Per-dungeon rules. Placeholder structure — Phase E will start interpreting
-# entries. Authoring rules here today is safe; they pass through to the
-# engine and stay until interpreted.
-rules: []
+# Per-dungeon rules.
+#
+# Each rule is an on_cast filter plus an ordered priorities list. The engine
+# walks priorities top to bottom and fires the first one whose conditions
+# all pass. When no rule matches, the spell's default `phrase` plays.
+#
+# Priority conditions (all set fields must pass; AND):
+#   Class-action filters — presence of any of these makes the engine bind
+#   the first available action from the class library that matches them;
+#   the priority fails if no such action is up:
+#     category        one of defensive/heal/dispel/interrupt/cc/stop
+#     scope           one of self/single_target/party_wide/raid_wide
+#     has_tag         require an action with this tag
+#     lacks_tag       exclude actions carrying this tag
+#   Cast filters:
+#     target_role     "tank" / "healer" / "dps" — checked against calibration roles
+#     target_present  true: require a target, false: require none
+#
+# `on_cast.target_role` is a *filter* on which casts match the rule. Rules
+# with more filters set ("more specific") win when multiple rules match the
+# same cast. So a tank-specific rule beats a generic one when the target is
+# the tank, but the generic rule fires for non-tank targets.
+#
+# Templating in `say` / `do` / `phrase`:
+#   {target}        canonical roster name (or raw OCR target, or "")
+#   {spell}         canonical Spell.name
+#   {duration}      "3.0s" or "" when absent
+#   {action.label}  bound when any class-action filter matched (e.g. "BOP")
+#   {action.id}     bound when any class-action filter matched (e.g. "bop")
+#
+# Priority output fields:
+#   say     templated log message (always required)
+#   do      templated action id; when set, engine emits Recommendation
+#   phrase  optional TTS override for the audible callout. When set,
+#           the speech plays this string (concatenated with the target
+#           name) instead of action.label. Useful when the right thing
+#           to *say* differs from the action's name, e.g. saying "Break
+#           Shield" while the underlying action id is "rebuke".
+#
+# When `do` is set the engine emits a Recommendation: TTS plays the
+# phrase (action.label by default, or `phrase` if overridden) stitched
+# with the target name. When `do` is absent the engine emits an Alert
+# with the spell's default phrase and the rendered `say` shows in the log.
+rules:
+  # ---- Interruptible casts ----
+  # If we have an interrupt off cooldown, suggest it and play
+  # "Rebuke Austin Huxworth" (action.label + canonical target name).
+  # Otherwise fall through to the spell's default phrase.
+  - on_cast:
+      spell_id: windrunner_spire_spirit_bolt
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      # No further priority = falls through to the spell-default Alert
+      # ("KICK SPIRIT BOLT").
+
+  # Pulsing Shriek puts up an absorb shield that pulses group-wide damage
+  # until the shield is broken. An interrupt breaks it, but the audible
+  # callout that's useful in the moment is "Break Shield" — not "Rebuke".
+  # If no interrupt is up, a party-wide defensive softens the pulses.
+  - on_cast:
+      spell_id: windrunner_spire_pulsing_shriek
+    priorities:
+      - category: interrupt
+        say: "Break Shield"
+        do: "{action.id}"
+        phrase: "Break Shield"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---- Magic-dispellable casts ----
+  # Cleanse on a paladin carries tag `magic`; the priority asks for that
+  # category + tag. For non-magic dispels (curses, poisons), the same
+  # shape works with `has_tag: curse` etc.
+  - on_cast:
+      spell_id: windrunner_spire_soul_torment
+    priorities:
+      - category: dispel
+        has_tag: magic
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---- Tank-specific vs generic (specificity demo) ----
+  # Arcane Salvo can target anyone; behavior differs on the tank.
+  # On the tank: avoid BoP (it drops aggro — tagged aggro_dropping in
+  # the paladin class library); prefer Sac → fall back to Aura → catch-all.
+  - on_cast:
+      spell_id: windrunner_spire_arcane_salvo
+      target_role: tank
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"          # no target — party-wide
+        do: "{action.id}"
+      - say: "Tank Buster on {target}"  # nothing available — just warn
+
+  # Same spell, NOT on the tank. Three branches:
+  #   1. Target visible, single-target defensive up → call the defensive
+  #      on that target (BoP is fine on a non-tank).
+  #   2. No target visible — speaking "BOP" alone is meaningless, so
+  #      switch to whatever party-wide defensive the player has
+  #      (Devotion Aura / Aura Mastery for paladin; whatever sits in
+  #      the class library at scope=party_wide for other classes).
+  #   3. Nothing available → fall through to the spell's default
+  #      DEFENSIVE ARCANE.
+  - on_cast:
+      spell_id: windrunner_spire_arcane_salvo
+    priorities:
+      - category: defensive
+        scope: single_target
+        target_present: true
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        target_present: false
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---- Curse dispel example ----
+  # Holy paladins can't dispel curses, so on a paladin this rule never
+  # fires its first branch — the catch-all does. Demonstrates that
+  # referencing categories your class doesn't have is safe; the rule
+  # just falls through.
+  - on_cast:
+      spell_id: windrunner_spire_curse_of_darkness
+    priorities:
+      - category: dispel
+        has_tag: curse
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - say: "Curse on {target} — needs dispel"

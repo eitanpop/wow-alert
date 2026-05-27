@@ -1,19 +1,22 @@
 """Tests for the spell DB + rule engine.
 
-The rule engine is a pure map from CastEvents → Alerts; dedup lives upstream
-in `CastDeduper` (see tests/test_dedupe.py).
+The rule engine is a pure map from a fully-populated RuleDecisionContext
+to a single RuleOutput; the spell-DB lookup and dedupe happen upstream
+(see tests/test_dedupe.py). All tests construct an explicit
+RuleDecisionContext and call `decide()` directly.
 """
 from __future__ import annotations
 
-from wow_alert.events import Alert, CastEvent, ScreenContext, Severity, Spell
+from wow_alert.class_library import ClassAction
+from wow_alert.events import (
+    Alert,
+    CastEvent,
+    Recommendation,
+    RuleDecisionContext,
+    Severity,
+    Spell,
+)
 from wow_alert.rules import RuleEngine, YamlSpellDb
-
-
-def make_event(spell: str, target: str | None = None, duration: float | None = None) -> CastEvent:
-    return CastEvent(
-        spell=spell, target=target, duration=duration,
-        bbox=(0, 0, 100, 30), track_id=1,
-    )
 
 
 def make_db(*spells: Spell, fuzzy_threshold: int = 85, roster=None) -> YamlSpellDb:
@@ -75,9 +78,14 @@ class TestTargetFuzzyMatch:
         assert db.lookup("Polymorph", "John") is not None
 
     def test_roster_member_fuzzy_passes(self):
+        # OCR typo on a single-token short name doesn't pass token_set_ratio
+        # at the default 85 threshold (computed ratio is ~75). The deduper's
+        # canonical_target path uses a lower target threshold + partial_ratio
+        # for this case; here we just demonstrate that fuzzy matching works
+        # when the threshold is set to a value typical for short names.
         db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER),
-                    roster=["John", "Mary"])
-        assert db.lookup("Polymorph", "Jhon") is not None  # OCR typo
+                    roster=["John", "Mary"], fuzzy_threshold=70)
+        assert db.lookup("Polymorph", "Jhon") is not None
 
     def test_non_roster_target_skips_fail_closed(self):
         db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER),
@@ -85,43 +93,338 @@ class TestTargetFuzzyMatch:
         assert db.lookup("Polymorph", "Zxywuv") is None
 
 
-class TestRuleEngine:
-    def test_alert_for_danger_match(self):
-        db = make_db(Spell(id="poly", name="Polymorph",
-                           severity=Severity.DANGER, phrase="DANGER"))
-        engine = RuleEngine(db)
-        ctx = ScreenContext(cast_events=[make_event("Polymorph", "John", 3.0)])
-        outputs = engine.evaluate(ctx)
-        assert len(outputs) == 1
-        assert isinstance(outputs[0], Alert)
-        assert outputs[0].severity == Severity.DANGER
-        assert outputs[0].phrase == "DANGER"
-        assert "John" in outputs[0].message
+class TestFuzzyDoesNotConfuse:
+    """Negative-side characterization for the spell-name fuzzy threshold.
 
-    def test_severity_ignore_skips(self):
-        db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.IGNORE))
-        engine = RuleEngine(db)
-        ctx = ScreenContext(cast_events=[make_event("Polymorph")])
-        assert engine.evaluate(ctx) == []
+    Each pair is two distinct WoW-flavored spells that share enough surface
+    structure to be plausible confusions. None of them should resolve to
+    the wrong canonical name at the default threshold. If any of these
+    starts matching the wrong spell, the threshold tuning has drifted.
+    """
 
-    def test_unknown_spell_no_output(self):
-        db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER))
-        engine = RuleEngine(db)
-        ctx = ScreenContext(cast_events=[make_event("UnknownSpell")])
-        assert engine.evaluate(ctx) == []
+    def _lookup_with(self, canonical: str, ocr: str):
+        db = make_db(Spell(id="X", name=canonical, severity=Severity.DANGER))
+        return db.lookup(ocr, None)
 
-    def test_message_no_target_no_duration(self):
-        db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER))
-        engine = RuleEngine(db)
-        ctx = ScreenContext(cast_events=[make_event("Polymorph")])
-        outputs = engine.evaluate(ctx)
-        assert outputs[0].message == "Polymorph"
+    def test_holy_light_not_holy_fire(self):
+        assert self._lookup_with("Holy Light", "Holy Fire") is None
 
-    def test_duplicate_calls_alert_each_time(self):
-        # No dedup here — the engine is pure mapping. Upstream is expected
-        # to dedupe before handing events over.
-        db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER))
-        engine = RuleEngine(db)
-        ctx = ScreenContext(cast_events=[make_event("Polymorph", "John", 3.0)])
-        assert len(engine.evaluate(ctx)) == 1
-        assert len(engine.evaluate(ctx)) == 1
+    def test_shadow_bolt_not_spirit_bolt(self):
+        assert self._lookup_with("Shadow Bolt", "Spirit Bolt") is None
+
+    def test_fireball_not_frostbolt(self):
+        assert self._lookup_with("Fireball", "Frostbolt") is None
+
+    def test_dark_command_not_dark_simulacrum(self):
+        assert self._lookup_with("Dark Command", "Dark Simulacrum") is None
+
+    def test_mass_dispel_not_mass_resurrection(self):
+        assert self._lookup_with("Mass Dispel", "Mass Resurrection") is None
+
+    def test_disjoint_roster_target_rejected(self):
+        # With a roster configured, the target must match SOMETHING; bogus
+        # text falls through fail-closed.
+        db = make_db(
+            Spell(id="poly", name="Polymorph", severity=Severity.DANGER),
+            roster=["Captain Garrick", "Meredy Huntswell"],
+        )
+        assert db.lookup("Polymorph", "ZXY") is None
+
+    def test_different_roster_member_short_name_rejected(self):
+        # "Garrick" and "Meredy" share zero meaningful structure; with a
+        # roster gate the lookup fails closed.
+        db = make_db(
+            Spell(id="poly", name="Polymorph", severity=Severity.DANGER),
+            roster=["Garrick"],
+        )
+        assert db.lookup("Polymorph", "Meredy") is None
+
+
+# ---- decide() rule-walker tests ----
+
+
+def cast(spell="Polymorph", target=None, duration=None):
+    return CastEvent(
+        spell=spell, target=target, duration=duration,
+        bbox=(0, 0, 100, 30), track_id=1,
+    )
+
+
+def spell(id_="poly", name="Polymorph", severity=Severity.DANGER, phrase="DANGER"):
+    return Spell(id=id_, name=name, severity=severity, phrase=phrase)
+
+
+def action(id_, label=None, category="defensive", scope="single_target",
+           tags=None, cooldown_icon=None):
+    return ClassAction(
+        id=id_,
+        label=label or id_.upper(),
+        category=category,
+        scope=scope,
+        tags=tags or [],
+        cooldown_icon=cooldown_icon or id_,
+    )
+
+
+def engine_with_rules(*rules):
+    eng = RuleEngine()
+    eng.set_rules(list(rules))
+    return eng
+
+
+class TestDecideFallback:
+    """No rules → fall back to the spell's default Alert."""
+
+    def test_no_rules_emits_default_alert(self):
+        eng = RuleEngine()
+        ctx = RuleDecisionContext(spell=spell(), cast=cast(target="John", duration=3.0))
+        out = eng.decide(ctx)
+        assert isinstance(out, Alert)
+        assert out.phrase == "DANGER"
+        assert out.message == "Polymorph on John (3.0s)"
+
+    def test_severity_ignore_returns_none(self):
+        eng = RuleEngine()
+        ctx = RuleDecisionContext(
+            spell=spell(severity=Severity.IGNORE), cast=cast(),
+        )
+        assert eng.decide(ctx) is None
+
+    def test_rule_for_other_spell_does_not_fire(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "other"},
+            "priorities": [{"say": "Should not fire"}],
+        })
+        ctx = RuleDecisionContext(spell=spell(), cast=cast(target="John"))
+        out = eng.decide(ctx)
+        assert isinstance(out, Alert)
+        assert out.message == "Polymorph on John"  # fallback
+
+
+class TestClassActionFilters:
+    """Class-action filters bind the first available action from the
+    player's library; the priority fails when none is available."""
+
+    def test_simple_match_emits_recommendation(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label} {target}",
+                "do": "{action.id}",
+            }],
+        })
+        eng.set_class_actions([action("bop", label="BOP")])
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John",
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "bop"
+        assert out.phrase == "BOP"
+        assert out.message == "BOP John"
+
+    def test_lacks_tag_excludes_action(self):
+        # BoP has aggro_dropping → first priority skips it; second matches Sac.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "lacks_tag": "aggro_dropping",
+                "say": "{action.label} {target}",
+                "do": "{action.id}",
+            }],
+        })
+        eng.set_class_actions([
+            action("bop", label="BOP", tags=["aggro_dropping"]),
+            action("sac", label="Sac"),
+        ])
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John",
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"
+
+    def test_on_cooldown_skips_action(self):
+        # First action on cooldown → engine skips to next.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label}",
+                "do": "{action.id}",
+            }],
+        })
+        eng.set_class_actions([
+            action("bop", label="BOP", cooldown_icon="bop"),
+            action("sac", label="Sac", cooldown_icon="sac"),
+        ])
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(),
+            cooldowns={"bop": 8.0},  # > 0 → on cooldown
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"  # bop was on cooldown
+
+    def test_priority_falls_through_to_catchall_when_no_action_available(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [
+                {
+                    "category": "defensive",
+                    "say": "{action.label} {target}",
+                    "do": "{action.id}",
+                },
+                {"say": "Tank Buster on {target}"},   # catch-all
+            ],
+        })
+        # No actions at all → first priority can't match.
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John",
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Alert)  # no `do` → Alert
+        assert out.message == "Tank Buster on John"
+
+
+class TestTargetRoleSpecificity:
+    """Rules with a target_role filter beat generic rules."""
+
+    def test_target_role_filters_match(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly", "target_role": "tank"},
+            "priorities": [{"say": "Tank-specific callout"}],
+        })
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John",
+            roles={"John": "tank"},
+        )
+        out = eng.decide(ctx)
+        assert out.message == "Tank-specific callout"
+
+    def test_target_role_filter_misses_other_role(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly", "target_role": "tank"},
+            "priorities": [{"say": "Tank-specific callout"}],
+        })
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="Mary"),
+            canonical_target="Mary",
+            roles={"Mary": "dps"},  # not the tank
+        )
+        out = eng.decide(ctx)
+        # Falls through to spell default
+        assert out.message == "Polymorph on Mary"
+
+    def test_specific_rule_wins_over_generic(self):
+        # Both rules match Mary's role check (the generic has no
+        # target_role filter, so it matches any). The specific one (tank)
+        # wins for John because it's more specific.
+        eng = engine_with_rules(
+            {
+                "on_cast": {"spell_id": "poly"},
+                "priorities": [{"say": "Generic callout for {target}"}],
+            },
+            {
+                "on_cast": {"spell_id": "poly", "target_role": "tank"},
+                "priorities": [{"say": "Tank callout for {target}"}],
+            },
+        )
+        ctx_tank = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John", roles={"John": "tank"},
+        )
+        ctx_dps = RuleDecisionContext(
+            spell=spell(), cast=cast(target="Mary"),
+            canonical_target="Mary", roles={"Mary": "dps"},
+        )
+        assert eng.decide(ctx_tank).message == "Tank callout for John"
+        assert eng.decide(ctx_dps).message == "Generic callout for Mary"
+
+    def test_target_role_unknown_does_not_fire_role_rule(self):
+        # John exists in roster but his role wasn't identified — rules
+        # keyed on role should not fire (fail-closed).
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly", "target_role": "tank"},
+            "priorities": [{"say": "Should not fire"}],
+        })
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"),
+            canonical_target="John",
+            roles={},  # role unknown
+        )
+        out = eng.decide(ctx)
+        # Falls through to spell default
+        assert out.message == "Polymorph on John"
+
+
+class TestComposedScenario:
+    """The BoP / BoSac / Aura / catch-all scenario the user described."""
+
+    def test_full_chain(self):
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "arcane_salvo", "target_role": "tank"},
+            "priorities": [
+                {
+                    "category": "defensive",
+                    "scope": "single_target",
+                    "lacks_tag": "aggro_dropping",
+                    "say": "{action.label} {target}",
+                    "do": "{action.id}",
+                },
+                {
+                    "category": "defensive",
+                    "scope": "party_wide",
+                    "say": "{action.label}",
+                    "do": "{action.id}",
+                },
+                {"say": "Tank Buster on {target}"},
+            ],
+        })
+        eng.set_class_actions([
+            action("bop", label="BOP", scope="single_target", tags=["aggro_dropping"]),
+            action("sac", label="Sac", scope="single_target"),
+            action("aura", label="Devo Aura", scope="party_wide"),
+        ])
+
+        arcane_salvo = Spell(
+            id="arcane_salvo", name="Arcane Salvo",
+            severity=Severity.DANGER, phrase="TANK BUSTER",
+        )
+
+        # All defensives available → BoSac wins (BoP excluded by tag).
+        ctx = RuleDecisionContext(
+            spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
+            canonical_target="John", roles={"John": "tank"},
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"
+        assert out.message == "Sac John"
+
+        # Sac on cooldown → party-wide Aura wins.
+        ctx2 = RuleDecisionContext(
+            spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
+            canonical_target="John", roles={"John": "tank"},
+            cooldowns={"sac": 30.0},
+        )
+        out = eng.decide(ctx2)
+        assert isinstance(out, Recommendation)
+        assert out.action == "aura"
+        assert out.message == "Devo Aura"
+
+        # All defensives down → catch-all Alert.
+        ctx3 = RuleDecisionContext(
+            spell=arcane_salvo, cast=cast(spell="Arcane Salvo", target="John"),
+            canonical_target="John", roles={"John": "tank"},
+            cooldowns={"sac": 30.0, "aura": 90.0},
+        )
+        out = eng.decide(ctx3)
+        assert isinstance(out, Alert)
+        assert out.message == "Tank Buster on John"

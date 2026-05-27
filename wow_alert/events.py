@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 BBox = tuple[int, int, int, int]  # x1, y1, x2, y2
@@ -93,70 +93,19 @@ class RuleDecisionContext:
     # policy decisions that care about "is this teammate or boss?".
     canonical_target: str | None = None
 
-    # Counters for `spell` that the player can use AND that are currently
-    # off cooldown. Populated by the pipeline after consulting the cooldown
-    # watcher (Phase F). Empty until then; once populated, Phase E's
-    # decide() emits a Recommendation in preference to a generic Alert.
-    available_counters: list["Counter"] = field(default_factory=list)
-
     # Wider context the engine may consult for non-trivial decisions.
     dungeon: str | None = None
-    player_class: str | None = None
-    player_spec: str | None = None
-    cooldowns: dict[str, float] = field(default_factory=dict)
+    cooldowns: dict[str, bool] = field(default_factory=dict)
     roster: list[str] = field(default_factory=list)
     # canonical roster name -> "tank" | "healer" | "dps". Members whose
     # role wasn't identified during calibration are absent — a missing
     # entry means "unknown", not "this member isn't a tank/healer/dps".
     roles: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class ScreenContext:
-    """Aggregated screen state, owned and mutated by the pipeline worker thread.
-
-    `cast_events` is always populated by the cast-bar pipeline. The remaining
-    fields are populated only when external context (team roster, dungeon name,
-    cooldown manager location) is available — typically from a higher-level
-    analyzer that runs separately from the per-frame loop.
-    """
-
-    cast_events: list[CastEvent] = field(default_factory=list)
-
-    # Extended context — populated only when a roster / cooldown analyzer is wired in.
-    roster: list[str] = field(default_factory=list)
-    # canonical roster name -> role token. Authored by calibration (LLM
-    # detects, user confirms via dropdown). Members whose role is unknown
-    # are simply absent from the dict.
-    roles: dict[str, str] = field(default_factory=dict)
-    dungeon: str | None = None
-    cooldown_manager_bbox: BBox | None = None
-    cooldowns: dict[str, float] = field(default_factory=dict)
-    player_class: str | None = None
-    player_spec: str | None = None
-
-
-class Counter(BaseModel):
-    """A class+spec-specific counter for a spell — what a particular class can
-    do to neutralize this cast. Consumed by rule engines that have player
-    class context.
-    """
-
-    character_class: str = Field(
-        alias="class",
-        description="Player class that can perform this counter (e.g. 'paladin').",
-    )
-    spec: str = Field(
-        description="Player spec within the class (e.g. 'holy').",
-    )
-    action: str = Field(
-        description=(
-            "Identifier of the counter action; opaque to the rule engine. "
-            "Used as a key in the AlertPlayer phrase set (e.g. 'BOP')."
-        ),
-    )
-
-    model_config = ConfigDict(populate_by_name=True)
+    # The current player's action catalog. Populated by the rule engine if
+    # the caller doesn't supply one (engine holds them in shared state for
+    # the hot path). Listed here so tests can construct a context with
+    # explicit actions; production code can leave the default empty list.
+    class_actions: list = field(default_factory=list)
 
 
 class Spell(BaseModel):
@@ -226,10 +175,6 @@ class Spell(BaseModel):
         default=None,
         description="Whether the cast can be interrupted by an interrupt ability.",
     )
-    counters: list[Counter] = Field(
-        default_factory=list,
-        description="Class+spec-specific actions that can counter this spell.",
-    )
     notes: str | None = Field(
         default=None,
         description="Free-text reminder for human readers.",
@@ -276,7 +221,14 @@ class SpellDb(Protocol):
 @runtime_checkable
 class AlertPlayer(Protocol):
     def prerender(self, phrases: list[str]) -> None: ...
-    def play(self, phrase: str) -> None: ...
+
+    def play(self, phrase: str | list[str]) -> None:
+        """Play one phrase, or concatenate a list of phrases into one clip.
+
+        The list form stitches prerendered phrase WAVs end-to-end —
+        used for action+target callouts like ["BOP", "Captain Garrick"].
+        """
+        ...
 
 
 __all__ = [
@@ -288,9 +240,7 @@ __all__ = [
     "Alert",
     "Recommendation",
     "RuleDecisionContext",
-    "ScreenContext",
     "Spell",
-    "Counter",
     "Detector",
     "OcrEngine",
     "SpellDb",

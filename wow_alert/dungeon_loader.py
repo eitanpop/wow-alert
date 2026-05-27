@@ -13,7 +13,7 @@ Each file is:
         name: ...
         severity: danger
         ...
-    rules: []                     # placeholder; Phase E populates
+    rules: []                     # see wow_alert/rule_schema.py:Rule
 
 The slug for a dungeon name is the lowercase string with non-alphanumeric
 characters collapsed to underscores: "Mists of Tirna Scithe" →
@@ -52,9 +52,10 @@ class DungeonFile(BaseModel):
 
     dungeon: str | None = None
     spells: list[Spell] = Field(default_factory=list)
-    # Rules are stored as opaque dicts for now — there's no schema yet.
-    # Phase E will introduce a real Rule model and `RuleEngine` will start
-    # interpreting them. Authored entries today won't break later.
+    # Rules are passed through as opaque dicts; `RuleEngine.set_rules`
+    # validates each against the `Rule` model and skips malformed entries
+    # with a warning. Keeping them untyped here lets the loader survive
+    # rule-schema typos without taking the whole dungeon file down.
     rules: list[dict] = Field(default_factory=list)
 
 

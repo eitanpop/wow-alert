@@ -24,12 +24,24 @@ def detect_device() -> tuple[str, str]:
 class YoloDetector:
     def __init__(self, model_path: Path, confidence: float, imgsz: int):
         self.model_path = Path(model_path)
+        if not self.model_path.exists():
+            raise FileNotFoundError(
+                f"YOLO model file not found at {self.model_path}. "
+                f"Set `model_path` in config/app.yaml (or pass --model PATH) "
+                f"to a .pt or .engine file."
+            )
         self.confidence = confidence
         self.imgsz = imgsz
         self._device, self._device_name = detect_device()
         logger.info("Inference device: %s (%s)", self._device, self._device_name)
         logger.info("Loading YOLO model from %s", self.model_path)
-        self._model = YOLO(str(self.model_path))
+        try:
+            self._model = YOLO(str(self.model_path))
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to load YOLO weights at {self.model_path}: {exc}. "
+                f"Verify the file is a valid ultralytics weights export."
+            ) from exc
 
     @property
     def device(self) -> str:

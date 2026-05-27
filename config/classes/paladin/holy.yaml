@@ -1,0 +1,64 @@
+# Holy paladin action library.
+#
+# Schema: wow_alert/class_library.py:ClassAction
+#   id              stable id; referenced by rule `do:` fields
+#   label           TTS-friendly short name; spoken when the action fires
+#   category        defensive | heal | dispel | interrupt | cc | stop
+#   scope           self | single_target | party_wide | raid_wide
+#   tags            free-form list; rules filter on has_tag / lacks_tag
+#   cooldown_icon   matches a cooldown_icon.action from calibration
+
+class: paladin
+spec: holy
+
+actions:
+  - id: bop
+    label: "BOP"
+    category: defensive
+    scope: single_target
+    tags: [aggro_dropping]          # don't suggest on the tank as default
+    cooldown_icon: bop
+
+  - id: blessing_of_sacrifice
+    label: "Sac"
+    category: defensive
+    scope: single_target
+    cooldown_icon: blessing_of_sacrifice
+
+  - id: lay_on_hands
+    label: "Lay on Hands"
+    category: heal
+    scope: single_target
+    tags: [emergency_only]          # rules may prefer to save this
+    cooldown_icon: lay_on_hands
+
+  - id: devotion_aura
+    label: "Devotion Aura"
+    category: defensive
+    scope: party_wide
+    cooldown_icon: devotion_aura
+
+  - id: aura_mastery
+    label: "Aura Mastery"
+    category: defensive
+    scope: party_wide
+    cooldown_icon: aura_mastery
+
+  - id: cleanse
+    label: "Cleanse"
+    category: dispel
+    scope: single_target
+    tags: [magic, poison, disease]
+    cooldown_icon: cleanse
+
+  - id: rebuke
+    label: "Rebuke"
+    category: interrupt
+    scope: single_target
+    cooldown_icon: rebuke
+
+  - id: hammer_of_justice
+    label: "Hammer of Justice"
+    category: cc
+    scope: single_target
+    cooldown_icon: hammer_of_justice

@@ -21,9 +21,9 @@ events.out.tfevents.*    # tensorboard logs
 # Project-local data scratch
 seat_prelabels.json
 
-# Generated at runtime — moved to the OS user-data dir (see wow_alert/paths.py).
-# The line below is a guard in case an override config/app.yaml puts the cache
-# back into the project tree.
+# Generated at runtime. Default location is the OS user-data dir (see
+# wow_alert/paths.py); the line below is a guard against an app.yaml
+# override that puts the cache back into the project tree.
 config/tts_cache/
 
 # Secrets

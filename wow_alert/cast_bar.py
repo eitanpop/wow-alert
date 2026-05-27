@@ -156,14 +156,9 @@ def make_cast_event(
 
 def tokens_from_ocr_output(
     ocr_output: list[tuple[str, float, float, float]],
-    crop_width: int,
 ) -> list[OcrToken]:
-    """Adapter: turn the OcrEngine `(text, conf, x_left, x_right)` tuples into
-    OcrTokens. `crop_width` is accepted for symmetry with engines that may not
-    supply bboxes (none currently do; left in the signature to keep call sites
-    stable).
-    """
-    del crop_width  # unused; kept for caller-side symmetry
+    """Adapter: turn the OcrEngine `(text, conf, x_left, x_right)` tuples
+    into OcrTokens."""
     return [
         OcrToken(text=text, confidence=conf, x_left=x_left, x_right=x_right)
         for text, conf, x_left, x_right in ocr_output

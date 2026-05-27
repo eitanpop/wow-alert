@@ -20,11 +20,11 @@ Cost: ~3x a single-pass call, still under $0.05 per calibration with Sonnet
 later if needed). Calibration runs rarely so this is fine.
 
 Bbox bookkeeping: every pass returns bboxes in the coordinate space of the
-image we sent. We track two transforms per pass — the encoding scale
+image we sent. Two transforms apply per pass — the encoding scale
 (downscale applied by `_encode_for_api` to fit the 5 MB limit) and, for
 passes 2/3, the crop origin in source-frame coordinates. After unscaling
 and offsetting, every bbox in the returned `Calibration` is in the
-original full-resolution frame's pixel space — directly usable by Phase D's
+original full-resolution frame's pixel space — directly usable by the
 OpenCV cooldown watcher.
 """
 from __future__ import annotations
@@ -48,6 +48,33 @@ logger = logging.getLogger(__name__)
 
 _MODEL = "claude-sonnet-4-6"
 _MAX_TOKENS = 2048
+
+
+# WoW class / spec taxonomy. Keys are the canonical lowercase tokens
+# (underscore for multi-word) used as filesystem slugs and dict keys
+# throughout the app. Display labels are derived by title-casing the
+# tokens — see _display() helpers in the dialog.
+WOW_CLASSES: list[str] = [
+    "death_knight", "demon_hunter", "druid", "evoker", "hunter",
+    "mage", "monk", "paladin", "priest", "rogue", "shaman",
+    "warlock", "warrior",
+]
+
+WOW_SPECS: dict[str, list[str]] = {
+    "death_knight": ["blood", "frost", "unholy"],
+    "demon_hunter": ["havoc", "vengeance"],
+    "druid":        ["balance", "feral", "guardian", "restoration"],
+    "evoker":       ["devastation", "preservation", "augmentation"],
+    "hunter":       ["beast_mastery", "marksmanship", "survival"],
+    "mage":         ["arcane", "fire", "frost"],
+    "monk":         ["brewmaster", "mistweaver", "windwalker"],
+    "paladin":      ["holy", "protection", "retribution"],
+    "priest":       ["discipline", "holy", "shadow"],
+    "rogue":        ["assassination", "outlaw", "subtlety"],
+    "shaman":       ["elemental", "enhancement", "restoration"],
+    "warlock":      ["affliction", "demonology", "destruction"],
+    "warrior":      ["arms", "fury", "protection"],
+}
 
 # Padding (fraction of the region's longer edge) added when cropping for
 # passes 2/3. The pass-1 bboxes are approximate; padding ensures we don't
@@ -128,11 +155,37 @@ For each icon:
   icon art (e.g. "Blessing of Protection", "Purge", "Kick"). If you
   don't recognize the icon, use "unknown". Do not guess.
 
+The icon set itself reveals the player's class (and usually spec) far
+better than anything else on screen, so also report:
+- `player_class`: one of the canonical lowercase tokens — death_knight,
+  demon_hunter, druid, evoker, hunter, mage, monk, paladin, priest,
+  rogue, shaman, warlock, warrior. Null if uncertain.
+- `player_spec`: the in-class spec token — examples:
+    death_knight: blood, frost, unholy
+    demon_hunter: havoc, vengeance
+    druid:        balance, feral, guardian, restoration
+    evoker:       devastation, preservation, augmentation
+    hunter:       beast_mastery, marksmanship, survival
+    mage:         arcane, fire, frost
+    monk:         brewmaster, mistweaver, windwalker
+    paladin:      holy, protection, retribution
+    priest:       discipline, holy, shadow
+    rogue:        assassination, outlaw, subtlety
+    shaman:       elemental, enhancement, restoration
+    warlock:      affliction, demonology, destruction
+    warrior:      arms, fury, protection
+  Spec is harder to nail than class — only commit when the icons include
+  a spec-defining ability (e.g. Beacon of Light → holy paladin,
+  Avenger's Shield → protection paladin, Renewing Mist → mistweaver
+  monk). Null otherwise.
+
 Return an empty list if you can't make out any icons.
 
 Respond with ONLY this JSON object, no prose, no code fences:
 {
   "cooldown_icons": [{"action": "...", "bbox": [x1, y1, x2, y2]}, ...],
+  "player_class": "..." | null,
+  "player_spec": "..." | null,
   "notes": "any caveats"
 }
 """
@@ -180,13 +233,44 @@ class Calibration(BaseModel):
     coordinates. Pass-1 region detection + pass-2/3 crop+read accumulate
     into the same coordinate space via the unscale-then-offset transforms
     inside `calibrate()`.
+
+    `player_class` and `player_spec` are the player's character config. The
+    LLM proposes them from on-screen cues (cooldown manager icons, action
+    bar); the user confirms/overrides in the post-calibration dialog.
+    Together they pick the file at `config/classes/<class>/<spec>.yaml`
+    which gives the rule engine its action library.
     """
 
     party_members: list[PartyMember] = Field(default_factory=list)
     cooldown_icons: list[CooldownIcon] = Field(default_factory=list)
     dungeon_name: str | None = None
+    player_class: str | None = None
+    player_spec: str | None = None
     notes: str = ""
     calibrated_at: datetime = Field(default_factory=datetime.now)
+
+    @field_validator("player_class", mode="before")
+    @classmethod
+    def _normalize_class(cls, v):
+        """Accept either 'paladin' or 'Paladin' / 'Death Knight' etc.;
+        normalize to lowercase underscore-token. Reject unknown values
+        (return null) rather than failing the whole calibration."""
+        if v is None:
+            return None
+        s = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return s if s in WOW_CLASSES else None
+
+    @field_validator("player_spec", mode="before")
+    @classmethod
+    def _normalize_spec(cls, v):
+        """Normalize but don't cross-validate against player_class — the
+        dialog handles that interactively, and the LLM may produce class
+        and spec inconsistently. Worst case: invalid combo loads no
+        class file; user fixes via the dropdown."""
+        if v is None:
+            return None
+        s = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return s if s else None
 
     def roster(self) -> list[str]:
         """Confidently-read names only. Slots the LLM marked uncertain are
@@ -240,7 +324,7 @@ def _make_client() -> Any:
 
 
 def calibrate_locate(image_bgr: np.ndarray) -> LocateResult:
-    """Pass 1 only: find rough regions + dungeon name in a full screenshot.
+    """Pass 1: find rough regions + dungeon name in a full screenshot.
 
     Returns a `LocateResult` whose region fields may be None when the LLM
     couldn't locate the element. The caller is expected to show these to
@@ -298,11 +382,19 @@ def calibrate_read(
             bbox = _resolve_bbox(m.get("bbox"), scale, offset=crop_origin)
             if bbox is None:
                 continue
-            party_members.append({"name": m.get("name"), "bbox": bbox})
+            party_members.append({
+                "name": m.get("name"),
+                # The dialog's role dropdown pre-selects from this value
+                # so the user usually only has to confirm.
+                "role": m.get("role"),
+                "bbox": bbox,
+            })
         if parsed.get("notes"):
             notes.append(f"party: {parsed['notes']}")
 
     cooldown_icons: list[dict] = []
+    player_class: str | None = None
+    player_spec: str | None = None
     if cooldown_region is not None:
         crop, crop_origin = _crop_with_padding(image_bgr, cooldown_region)
         parsed = _call_pass(client, crop, _PROMPT_READ_COOLDOWNS)
@@ -315,6 +407,12 @@ def calibrate_read(
                 "action": icon.get("action") or "unknown",
                 "bbox": bbox,
             })
+        # Class/spec ride along with the cooldown-icon read: the icon set
+        # is the most class-defining signal on screen, and Pass 3 sees it
+        # at native size in the crop. Validators on Calibration normalize
+        # and reject unknowns.
+        player_class = parsed.get("player_class")
+        player_spec = parsed.get("player_spec")
         if parsed.get("notes"):
             notes.append(f"cooldowns: {parsed['notes']}")
 
@@ -322,6 +420,8 @@ def calibrate_read(
         "party_members": party_members,
         "cooldown_icons": cooldown_icons,
         "dungeon_name": dungeon_name,
+        "player_class": player_class,
+        "player_spec": player_spec,
         "notes": " | ".join(notes),
     }
     try:
@@ -365,7 +465,7 @@ def save_calibration(cal: Calibration, path: Path) -> None:
 
 
 def load_calibration(path: Path) -> Calibration | None:
-    """Load a previously-saved calibration, or None if the file is missing
+    """Load the Calibration from `path`, or None if the file is missing
     or malformed. A malformed file is logged but doesn't raise — the app
     should boot fine without one."""
     if not path.exists():

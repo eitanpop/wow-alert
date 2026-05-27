@@ -51,13 +51,7 @@ class TestLoadConfig:
         with pytest.raises(Exception):
             load_config(cfg_path)
 
-    def test_dungeon_class_spec_pass_through(self, tmp_path: Path):
+    def test_dungeon_pass_through(self, tmp_path: Path):
         cfg_path = write_yaml(tmp_path, {"model_path": "C:/models/x.pt"})
-        cfg = load_config(cfg_path, overrides={
-            "dungeon": "Operation: Floodgate",
-            "player_class": "paladin",
-            "player_spec": "holy",
-        })
+        cfg = load_config(cfg_path, overrides={"dungeon": "Operation: Floodgate"})
         assert cfg.dungeon == "Operation: Floodgate"
-        assert cfg.player_class == "paladin"
-        assert cfg.player_spec == "holy"

@@ -35,7 +35,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from wow_alert.calibration import Calibration, PartyMember
+from wow_alert.calibration import (
+    Calibration,
+    PartyMember,
+    WOW_CLASSES,
+    WOW_SPECS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +56,12 @@ _ROLE_OPTIONS = [
     ("Healer", "healer"),
     ("DPS", "dps"),
 ]
+
+
+def _display_name(token: str) -> str:
+    """Convert a canonical lowercase token to a display label.
+    'death_knight' -> 'Death Knight'."""
+    return " ".join(p.capitalize() for p in token.split("_"))
 
 
 class CalibrationDialog(QDialog):
@@ -86,6 +97,36 @@ class CalibrationDialog(QDialog):
         self._dungeon_edit = QLineEdit(cal.dungeon_name or "")
         self._dungeon_edit.setPlaceholderText("e.g. Mists of Tirna Scithe")
         form.addRow("Dungeon:", self._dungeon_edit)
+
+        # Class / spec dropdowns. Class drives the spec list — selecting
+        # paladin shows holy/protection/retribution; switching to monk
+        # rebuilds with brewmaster/mistweaver/windwalker. Pre-selected to
+        # whatever Pass 1's LLM call returned.
+        self._class_combo = QComboBox()
+        self._class_combo.addItem("(unknown)", userData=None)
+        for cls in WOW_CLASSES:
+            self._class_combo.addItem(_display_name(cls), userData=cls)
+        self._spec_combo = QComboBox()
+        self._class_combo.currentIndexChanged.connect(self._on_class_changed)
+
+        # Order matters: connect first, then set the initial class — that
+        # way _on_class_changed runs and populates the spec combo before
+        # we try to pre-select within it.
+        if cal.player_class:
+            for i in range(self._class_combo.count()):
+                if self._class_combo.itemData(i) == cal.player_class:
+                    self._class_combo.setCurrentIndex(i)
+                    break
+        else:
+            self._on_class_changed()  # populate spec combo with "(unknown)" only
+        if cal.player_spec:
+            for i in range(self._spec_combo.count()):
+                if self._spec_combo.itemData(i) == cal.player_spec:
+                    self._spec_combo.setCurrentIndex(i)
+                    break
+
+        form.addRow("Class:", self._class_combo)
+        form.addRow("Spec:", self._spec_combo)
         root.addLayout(form)
 
         root.addWidget(self._make_section_label(
@@ -94,8 +135,7 @@ class CalibrationDialog(QDialog):
         root.addWidget(self._build_member_list())
 
         root.addWidget(self._make_section_label(
-            f"Cooldown icons: {len(cal.cooldown_icons)} detected "
-            "(edit on a future iteration)"
+            f"Cooldown icons: {len(cal.cooldown_icons)} detected"
         ))
 
         buttons = QDialogButtonBox(
@@ -118,6 +158,8 @@ class CalibrationDialog(QDialog):
             )
 
         dungeon = self._dungeon_edit.text().strip() or None
+        player_class = self._class_combo.currentData()
+        player_spec = self._spec_combo.currentData()
 
         # deepcopy to preserve cooldown_icons / notes / calibrated_at without
         # mutating the original (the caller may want to compare before/after).
@@ -125,9 +167,31 @@ class CalibrationDialog(QDialog):
             party_members=edited_members,
             cooldown_icons=deepcopy(self._cal.cooldown_icons),
             dungeon_name=dungeon,
+            player_class=player_class,
+            player_spec=player_spec,
             notes=self._cal.notes,
             calibrated_at=self._cal.calibrated_at,
         )
+
+    def _on_class_changed(self) -> None:
+        """Repopulate the spec combo when class changes. Tries to preserve
+        the current selection if it's still valid for the new class — that
+        way a user toggling between two classes doesn't lose their spec
+        each time."""
+        cls = self._class_combo.currentData()
+        current_spec = (
+            self._spec_combo.currentData() if self._spec_combo.count() else None
+        )
+        self._spec_combo.clear()
+        self._spec_combo.addItem("(unknown)", userData=None)
+        for spec in WOW_SPECS.get(cls, []):
+            self._spec_combo.addItem(_display_name(spec), userData=spec)
+        # Restore previous selection if still applicable.
+        if current_spec is not None:
+            for i in range(self._spec_combo.count()):
+                if self._spec_combo.itemData(i) == current_spec:
+                    self._spec_combo.setCurrentIndex(i)
+                    break
 
     # ---- internals ----
 

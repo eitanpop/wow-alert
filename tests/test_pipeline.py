@@ -32,7 +32,20 @@ def make_frame(w: int = 200, h: int = 60) -> np.ndarray:
     return np.zeros((h, w, 3), dtype=np.uint8)
 
 
-def make_deps(outcome: DedupeOutcome | None = None):
+_POLY = Spell(id="poly", name="Polymorph",
+              severity=Severity.DANGER, duration=3.0)
+
+
+def make_deps(
+    outcome: DedupeOutcome | None = None,
+    spell: Spell | None = _POLY,
+):
+    """Build a PipelineDeps with mocked everything.
+
+    `spell` is what the (mocked) spell DB will return for the OCR'd text.
+    Default is the canonical Polymorph used by most tests; pass None to
+    simulate an unmatched cast.
+    """
     capture = MagicMock()
     detector = MagicMock()
     tracker = CastBarTracker()
@@ -43,25 +56,26 @@ def make_deps(outcome: DedupeOutcome | None = None):
         ("John", 0.9, 60.0, 80.0),
         ("3.0", 0.92, 85.0, 99.0),
     ]
+    spell_db = MagicMock()
+    spell_db.lookup.return_value = spell
     deduper = MagicMock()
     if outcome is None:
         outcome = DedupeOutcome(
             disposition=Disposition.MATCHED_NEW,
-            canonical_spell=Spell(id="poly", name="Polymorph",
-                                  severity=Severity.DANGER, duration=3.0),
             canonical_target=None,
             ttl_s=3.0,
         )
     deduper.process.return_value = outcome
     rule_engine = MagicMock()
-    rule_engine.evaluate.return_value = [
-        Alert(severity=Severity.DANGER, phrase="DANGER",
-              message="Polymorph on John (3.0s)"),
-    ]
+    # decide() returns a single RuleOutput (or None) per cast.
+    rule_engine.decide.return_value = Alert(
+        severity=Severity.DANGER, phrase="DANGER",
+        message="Polymorph on John (3.0s)",
+    )
     alert_player = MagicMock()
     return PipelineDeps(
         capture=capture, detector=detector, tracker=tracker,
-        ocr=ocr, deduper=deduper, rule_engine=rule_engine,
+        ocr=ocr, spell_db=spell_db, deduper=deduper, rule_engine=rule_engine,
         alert_player=alert_player,
     ), detector, ocr, deduper, rule_engine, alert_player
 
@@ -89,7 +103,7 @@ def test_matched_new_runs_full_downstream():
 
     ocr.read.assert_called_once()
     deduper.process.assert_called_once()
-    rule_engine.evaluate.assert_called_once()
+    rule_engine.decide.assert_called_once()
     alert_player.play.assert_called_once_with("DANGER")
     assert len(alerts) == 1
 
@@ -104,8 +118,6 @@ def test_matched_new_runs_full_downstream():
 def test_matched_duplicate_skips_rule_engine():
     outcome = DedupeOutcome(
         disposition=Disposition.MATCHED_DUPLICATE,
-        canonical_spell=Spell(id="poly", name="Polymorph",
-                              severity=Severity.DANGER, duration=3.0),
         canonical_target=None,
         ttl_s=0.0,
     )
@@ -117,7 +129,7 @@ def test_matched_duplicate_skips_rule_engine():
     update = deps.tracker.update([detection_at_origin()])
     worker._process_new_track(frame, update.new[0])
 
-    rule_engine.evaluate.assert_not_called()
+    rule_engine.decide.assert_not_called()
     alert_player.play.assert_not_called()
     texts = " | ".join(t for _, t in messages)
     assert "skipping" in texts
@@ -129,11 +141,12 @@ def test_matched_duplicate_skips_rule_engine():
 def test_unmatched_new_registers_without_rule_engine():
     outcome = DedupeOutcome(
         disposition=Disposition.UNMATCHED_NEW,
-        canonical_spell=None,
         canonical_target=None,
         ttl_s=3.0,
     )
-    deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(outcome=outcome)
+    deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(
+        outcome=outcome, spell=None,
+    )
     worker = PipelineWorker(deps)
     messages = collect_messages(worker)
 
@@ -141,7 +154,7 @@ def test_unmatched_new_registers_without_rule_engine():
     update = deps.tracker.update([detection_at_origin()])
     worker._process_new_track(frame, update.new[0])
 
-    rule_engine.evaluate.assert_not_called()
+    rule_engine.decide.assert_not_called()
     alert_player.play.assert_not_called()
     levels = [lvl for lvl, _ in messages]
     texts = " | ".join(t for _, t in messages)
@@ -153,11 +166,12 @@ def test_unmatched_new_registers_without_rule_engine():
 def test_unmatched_duplicate_skips_silently_at_log_level():
     outcome = DedupeOutcome(
         disposition=Disposition.UNMATCHED_DUPLICATE,
-        canonical_spell=None,
         canonical_target=None,
         ttl_s=0.0,
     )
-    deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(outcome=outcome)
+    deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps(
+        outcome=outcome, spell=None,
+    )
     worker = PipelineWorker(deps)
     messages = collect_messages(worker)
 
@@ -165,7 +179,7 @@ def test_unmatched_duplicate_skips_silently_at_log_level():
     update = deps.tracker.update([detection_at_origin()])
     worker._process_new_track(frame, update.new[0])
 
-    rule_engine.evaluate.assert_not_called()
+    rule_engine.decide.assert_not_called()
     alert_player.play.assert_not_called()
     levels = [lvl for lvl, _ in messages]
     assert "LOG" not in levels  # skipped: only DEBUG noise
@@ -187,6 +201,6 @@ def test_continuing_track_does_not_call_ocr():
         worker.continuing_track.emit(track.track_id)
 
     ocr.read.assert_not_called()
-    rule_engine.evaluate.assert_not_called()
+    rule_engine.decide.assert_not_called()
     alert_player.play.assert_not_called()
     assert continuing_ids == [1]

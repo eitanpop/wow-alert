@@ -70,8 +70,10 @@ class TestParseTokens:
         assert duration == pytest.approx(12.0)
 
     def test_multi_word_spell_no_target(self):
-        # The case that broke the old parser: "Vigilant Defense" + duration,
-        # no target. With only a small intra-word gap, both words go to spell.
+        # Multi-word spell with no target: a positional "last token is the
+        # target" rule would misclassify "Defense" as the target. The
+        # gap-based parser instead sees the small intra-word gap and groups
+        # both words into the spell.
         spell, target, duration = parse_tokens(
             [
                 tok("Vigilant", 30, 180),
@@ -175,7 +177,7 @@ class TestParseTokens:
 
 class TestTokensFromOcrOutput:
     def test_empty(self):
-        assert tokens_from_ocr_output([], crop_width=200) == []
+        assert tokens_from_ocr_output([]) == []
 
     def test_passes_through_bboxes(self):
         out = tokens_from_ocr_output(
@@ -183,7 +185,6 @@ class TestTokensFromOcrOutput:
                 ("A", 0.9, 10.0, 50.0),
                 ("B", 0.8, 100.0, 140.0),
             ],
-            crop_width=300,
         )
         assert len(out) == 2
         assert out[0].text == "A"

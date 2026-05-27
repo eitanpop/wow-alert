@@ -35,9 +35,8 @@ from wow_alert.events import (
     OcrEngine,
     Recommendation,
     RuleDecisionContext,
-    ScreenContext,
 )
-from wow_alert.rules import RuleEngine
+from wow_alert.rules import RuleEngine, YamlSpellDb
 from wow_alert.tracker import CastBarTracker, Track
 
 logger = logging.getLogger(__name__)
@@ -49,6 +48,7 @@ class PipelineDeps:
     detector: Detector
     tracker: CastBarTracker
     ocr: OcrEngine
+    spell_db: YamlSpellDb
     deduper: CastDeduper
     rule_engine: RuleEngine
     alert_player: AlertPlayer
@@ -80,13 +80,18 @@ class PipelineWorker(QObject):
         self._running = False
         self._paused = False
         self._preview_enabled = preview_enabled
-        self._context = ScreenContext()
-        # Most recently captured frame, updated each tick. Exposed via
-        # latest_frame() so the calibration flow can grab a current frame
-        # without subscribing to frame_ready (which is gated by preview).
-        # Cross-thread read is safe (numpy array assignment is atomic in
-        # CPython); consumers may see one tick behind, which is fine for
-        # calibration purposes.
+        # Per-cast decision inputs. Each has a single writer:
+        #   _roster / _dungeon / _roles  ← update_calibration_context (UI thread)
+        #   _cooldowns                    ← set_cooldowns (cooldown watcher)
+        #   _latest_frame                 ← _process_one_frame (this worker)
+        # The worker reads them when building RuleDecisionContext. Atomic
+        # attribute assignment under the GIL is enough for the cross-thread
+        # writes — no field is read mid-mutation because each is a single
+        # rebind, not an in-place edit.
+        self._roster: list[str] = []
+        self._dungeon: str | None = None
+        self._roles: dict[str, str] = {}
+        self._cooldowns: dict[str, bool] = {}
         self._latest_frame: np.ndarray | None = None
         # Minimum wall time per tick. Cast bars last 1-10 s, so even 5 FPS
         # catches them; the default 10 FPS leaves headroom for jitter without
@@ -106,24 +111,33 @@ class PipelineWorker(QObject):
         successful capture. Callable from any thread."""
         return self._latest_frame
 
+    @Slot(object, object, object)
     def update_calibration_context(
         self,
         roster: list[str],
         dungeon: str | None,
         roles: dict[str, str],
     ) -> None:
-        """Push fresh calibration data into the screen context.
+        """Refresh roster + dungeon + roles after a calibration.
 
-        Called from the main thread when a new calibration is applied
-        (startup-load and after the user accepts a fresh calibration).
-        The worker thread reads these fields when building a
-        RuleDecisionContext for each new cast; Python's GIL is enough
-        coherence here since updates are rare and the reads use a single
-        attribute access per field.
+        Called from the UI thread; the worker reads these fields when
+        building a RuleDecisionContext for each new cast. Each
+        assignment is a single attribute rebind so the GIL covers
+        atomicity — readers never see a partial update.
         """
-        self._context.roster = list(roster)
-        self._context.dungeon = dungeon
-        self._context.roles = dict(roles)
+        self._roster = list(roster)
+        self._dungeon = dungeon
+        self._roles = dict(roles)
+
+    @Slot(dict)
+    def set_cooldowns(self, cooldowns: dict[str, bool]) -> None:
+        """Replace the cached cooldown availability map.
+
+        Called from the cooldown watcher (UI thread). The worker reads
+        `self._cooldowns` when building RuleDecisionContext; same
+        single-rebind atomicity story as `update_calibration_context`.
+        """
+        self._cooldowns = dict(cooldowns)
 
     @Slot(bool)
     def set_preview_enabled(self, value: bool) -> None:
@@ -234,7 +248,7 @@ class PipelineWorker(QObject):
             return
 
         crop_width = crop.shape[1]
-        tokens = tokens_from_ocr_output(ocr_out, crop_width=crop_width)
+        tokens = tokens_from_ocr_output(ocr_out)
         cast = make_cast_event(tokens, track.bbox, track.track_id, crop_width=crop_width)
         # If OCR produced no usable spell text, the bbox is almost certainly
         # a false positive from the detector (a buff icon, an HP plate) or
@@ -249,10 +263,11 @@ class PipelineWorker(QObject):
         raw_desc = self._describe(cast)
         self.worker_message.emit("DEBUG", f"cast: {raw_desc}")
 
-        outcome = self._deps.deduper.process(cast)
+        spell = self._deps.spell_db.lookup(cast.spell, cast.target)
+        outcome = self._deps.deduper.process(cast, spell)
 
         if outcome.disposition is Disposition.MATCHED_NEW:
-            spell = outcome.canonical_spell
+            assert spell is not None  # matched dispositions imply a spell
             # Swap raw OCR target for the roster-canonical name when the
             # deduper resolved one. Rule engine + alert message + log line
             # all see the canonical target this way.
@@ -264,20 +279,14 @@ class PipelineWorker(QObject):
                 f"registered: {spell.name}{self._target_suffix(cast)} "
                 f"→ rule engine (ttl={outcome.ttl_s:.1f}s)",
             )
-            # Build the explicit decision context the engine expects. Most
-            # fields stay default until Phase F populates cooldowns and
-            # Phase E filters available_counters; the engine doesn't read
-            # them yet either.
             decision_ctx = RuleDecisionContext(
                 spell=spell,
                 cast=cast,
                 canonical_target=outcome.canonical_target,
-                dungeon=self._context.dungeon,
-                player_class=self._context.player_class,
-                player_spec=self._context.player_spec,
-                cooldowns=dict(self._context.cooldowns),
-                roster=list(self._context.roster),
-                roles=dict(self._context.roles),
+                dungeon=self._dungeon,
+                cooldowns=dict(self._cooldowns),
+                roster=list(self._roster),
+                roles=dict(self._roles),
             )
             try:
                 output = self._deps.rule_engine.decide(decision_ctx)
@@ -291,18 +300,22 @@ class PipelineWorker(QObject):
                     self.error.emit("audio", str(exc))
                 self.alert.emit(output)
             elif isinstance(output, Recommendation):
-                # Phase E will wire up Recommendation playback (token-concat
-                # WAV: action + target). For now, surface it as a LOG so
-                # the operator sees the engine made the recommendation
-                # decision even before audio is hooked up.
-                self.worker_message.emit(
-                    "LOG", f"RECOMMEND: {output.message}"
-                )
+                # The AlertPlayer's list-of-phrases form stitches the
+                # action label and the target name into one clip
+                # ("BOP Captain Garrick") from the two prerendered WAVs.
+                parts = [output.phrase]
+                if output.target:
+                    parts.append(output.target)
+                try:
+                    self._deps.alert_player.play(parts)
+                except Exception as exc:
+                    self.error.emit("audio", str(exc))
+                self.worker_message.emit("LOG", f"RECOMMEND: {output.message}")
 
         elif outcome.disposition is Disposition.MATCHED_DUPLICATE:
-            spell = outcome.canonical_spell
-            # Use canonical target in the skip log too, so the message
-            # matches the registered/alert line for the same cast.
+            assert spell is not None
+            # Use the canonical roster name so this line aligns with the
+            # registered/alert lines for the same logical cast.
             display_target = outcome.canonical_target or cast.target
             target_suffix = f" on {display_target}" if display_target else ""
             self.worker_message.emit(
@@ -312,7 +325,7 @@ class PipelineWorker(QObject):
 
         elif outcome.disposition is Disposition.UNMATCHED_NEW:
             self.worker_message.emit(
-                "DEBUG", f"unmatched: {raw_desc} (not in spells.yaml)"
+                "DEBUG", f"unmatched: {raw_desc} (not in spell DB)"
             )
             self.worker_message.emit(
                 "LOG",

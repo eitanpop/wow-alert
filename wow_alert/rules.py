@@ -1,33 +1,43 @@
-"""Spell database + rule engine.
+"""Spell DB + rule engine.
 
-`YamlSpellDb` filters at load time by dungeon and `(class, spec)` so only relevant
-entries enter the matcher. Fuzzy matching uses rapidfuzz's `token_set_ratio` on
-both the spell and target text. Either side missing the threshold returns None,
-which the rule engine treats as "skip" — fail-closed.
+`YamlSpellDb` is the lookup catalog: fuzzy name → canonical `Spell`. It
+holds the active per-dungeon set; `replace_spells` swaps the spell set
+when calibration changes the active dungeon.
+
+`RuleEngine.decide(RuleDecisionContext)` is the policy layer. It does
+no DB lookup, no dedupe, no temporal state — given a fully-populated
+decision context it returns one `RuleOutput` (Alert | Recommendation)
+or None to suppress. Rule data and class-action data live as engine
+attributes; decide() injects them into the context if the caller didn't.
 """
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from dataclasses import dataclass, field, replace
 from typing import Iterable
 
-import yaml
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 
+from wow_alert.class_library import ClassAction
 from wow_alert.events import (
     Alert,
     Recommendation,
     RuleDecisionContext,
     RuleOutput,
-    ScreenContext,
     Severity,
     Spell,
+)
+from wow_alert.rule_schema import (
+    Priority,
+    Rule,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class YamlSpellDb:
+    """In-memory spell catalog. Fuzzy name → canonical Spell."""
+
     # Built-in: WoW's "Interrupted!" cast-bar text appears after any successful
     # kick. OCR truncation across this string varies wildly ("Inter",
     # "rrupted", "Interrupted on Austin", "rrupted [Captai") so we recognize
@@ -66,31 +76,6 @@ class YamlSpellDb:
         self._all_names: list[str] = []
         self.replace_spells(spells)
 
-    @classmethod
-    def from_yaml(
-        cls,
-        path: Path,
-        player_class: str | None = None,
-        player_spec: str | None = None,
-        fuzzy_threshold: int = 85,
-        roster: Iterable[str] | None = None,
-    ) -> "YamlSpellDb":
-        """Load a flat list-of-spells YAML file.
-
-        Kept for compatibility with the original schema; new code should
-        use `wow_alert.dungeon_loader.load_dungeon_config` + `replace_spells`
-        to load from `config/dungeons/`. Class/spec filtering on counters
-        applies regardless of which loader you use.
-        """
-        with Path(path).open("r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or []
-        spells = [Spell.model_validate(entry) for entry in raw]
-        return cls(
-            apply_counter_filter(spells, player_class, player_spec),
-            fuzzy_threshold=fuzzy_threshold,
-            roster=roster,
-        )
-
     def all_phrases(self) -> list[str]:
         return sorted({s.phrase for s in self._spells})
 
@@ -119,7 +104,7 @@ class YamlSpellDb:
                 index[alias.lower()] = spell
         self._name_index = index
         self._all_names = list(index.keys())
-        logger.info("Spell DB now holds %d spells", len(self._spells))
+        logger.info("Spell DB holds %d spells", len(self._spells))
 
     def lookup(self, spell_text: str, target_text: str | None) -> Spell | None:
         spell = self._lookup_spell(spell_text)
@@ -136,20 +121,31 @@ class YamlSpellDb:
             return None
         lower = spell_text.lower()
 
-        # User-defined entries first.
+        # Exact (canonical name + every alias).
         exact = self._name_index.get(lower)
         if exact is not None:
             return exact
-        if self._all_names:
-            match = process.extractOne(
-                lower,
-                self._all_names,
-                scorer=fuzz.token_set_ratio,
-                score_cutoff=self.fuzzy_threshold,
+
+        # Fuzzy match across all names. Use max(token_set, partial_ratio):
+        #   - token_set_ratio handles spell names with reordered/extra
+        #     tokens ("Holy Light" vs "Light Holy").
+        #   - partial_ratio handles OCR-merged tokens ("SpiritBolt" vs
+        #     "Spirit Bolt") where there's no whole-token overlap but a
+        #     close substring is present.
+        # Whichever scorer goes higher wins; the cutoff (fuzzy_threshold,
+        # default 85) is the same for both.
+        best_score = 0
+        best_name: str | None = None
+        for candidate in self._all_names:
+            score = max(
+                fuzz.token_set_ratio(lower, candidate),
+                fuzz.partial_ratio(lower, candidate),
             )
-            if match is not None:
-                matched_name, _score, _idx = match
-                return self._name_index[matched_name]
+            if score > best_score:
+                best_score = score
+                best_name = candidate
+        if best_name is not None and best_score >= self.fuzzy_threshold:
+            return self._name_index[best_name]
 
         # Built-in fallback: catch "Interrupted!" in any of its OCR-mangled
         # forms. Three checks, from cheap to permissive:
@@ -167,146 +163,274 @@ class YamlSpellDb:
 
         return None
 
+    # Target-match threshold is *below* `fuzzy_threshold` (which gates spell-
+    # name matching) because OCR jitter on short single-token names is severe:
+    # "AustinH" vs "Austin Huxworth" only scores ~57% on token_set_ratio,
+    # well below the 85 we use for multi-token spell names. The deduper's
+    # `_canonical_target` uses 70 with `max(token_set, partial_ratio)`; we
+    # use the same scoring + threshold here so both layers agree on what
+    # counts as "this OCR'd target is a roster member".
+    _TARGET_MATCH_THRESHOLD = 70
+
     def _target_ok(self, target_text: str | None) -> bool:
         """Fuzzy check on an OCR'd target name against the configured roster.
 
         Three cases:
-        - No target detected by OCR → pass. Many cast bars have no target field
-          visible; the spell match alone is sufficient.
-        - Target detected, no roster configured → pass. Without a known set of
-          valid target names there is nothing to validate against, so any
-          non-empty target string is accepted.
-        - Target detected, roster configured → require fuzzy match against the
-          roster at the configured threshold. A miss fails the lookup, so the
-          rule engine produces no output. This is the fail-closed path that
-          prevents false alerts when OCR garbles a target name into something
-          unrelated.
+        - No target detected by OCR → pass.
+        - Target detected, no roster configured → pass (nothing to validate).
+        - Target detected, roster configured → require either a token_set
+          OR a partial_ratio fuzzy match against any roster entry at
+          `_TARGET_MATCH_THRESHOLD`. Either signal alone is enough — OCR
+          can either merge tokens ("MeredyH" → no token overlap) or drop
+          tokens ("Austin Hux" → partial substring); both should count.
         """
         if not target_text:
             return True
         if not self._roster_lower:
             return True
-        match = process.extractOne(
-            target_text.lower(),
-            self._roster_lower,
-            scorer=fuzz.token_set_ratio,
-            score_cutoff=self.fuzzy_threshold,
-        )
-        return match is not None
+        target_lower = target_text.lower()
+        for candidate in self._roster_lower:
+            score = max(
+                fuzz.token_set_ratio(target_lower, candidate),
+                fuzz.partial_ratio(target_lower, candidate),
+            )
+            if score >= self._TARGET_MATCH_THRESHOLD:
+                return True
+        return False
 
 
-def apply_counter_filter(
-    spells: Iterable[Spell],
-    player_class: str | None,
-    player_spec: str | None,
-) -> list[Spell]:
-    """Prune each spell's `counters` list to entries matching the given
-    class+spec. No-op when either is None (load every counter; rule engine
-    will sort them out at decide-time)."""
-    spells = list(spells)
-    if player_class is None or player_spec is None:
-        return spells
-    for spell in spells:
-        spell.counters = [
-            c for c in spell.counters
-            if c.character_class == player_class and c.spec == player_spec
-        ]
-    return spells
+@dataclass(frozen=True, slots=True)
+class _MatchResult:
+    """Predicate evaluation result. `bindings` carries data the rule
+    template can reference, like the matched ClassAction for {action.label}."""
+
+    matched: bool
+    bindings: dict = field(default_factory=dict)
 
 
 class RuleEngine:
     """Decides what to do for one matched, deduped cast.
 
-    `decide(RuleDecisionContext)` is the primary entry point and a pure
-    function — no spell-DB lookup, no dedupe, no temporal state. Upstream
-    (pipeline + deduper) does all the resolution and hands the engine a
-    fully-populated context. The engine then returns a single
-    `RuleOutput` (Alert, Recommendation) or `None` to suppress.
-
-    This shape is intentional: it makes the engine the place where game
-    policy lives — "if a counter is available, prefer Recommendation",
-    "if dungeon is X and severity is info, suppress", etc. — without
-    those policies needing to know anything about how spells get matched
-    or how dedupe works.
-
-    `evaluate(ScreenContext)` is kept as a compatibility shim for callers
-    that haven't migrated to the explicit context yet (and for tests that
-    exercise lookup + alert in one shot).
+    `decide(RuleDecisionContext)` is a pure function — no spell DB lookup,
+    no dedupe, no temporal state. Rule data and class actions are engine
+    attributes (set_rules, set_class_actions); decide() injects them into
+    the context if the caller didn't supply them, so production code can
+    pass a minimal context and tests can pass an explicit, fully-populated
+    one.
     """
 
-    def __init__(self, spell_db: YamlSpellDb):
-        self.spell_db = spell_db
-        # Authored per-dungeon rules from `dungeons/*.yaml`. Stored as
-        # opaque dicts for now — `decide()` doesn't read them yet, but
-        # plumbing them through means you can start authoring rules and
-        # not lose any when Phase E begins interpreting them.
-        self._rules: list[dict] = []
+    def __init__(self):
+        self._rules: list[Rule] = []
+        self._class_actions: list[ClassAction] = []
 
-    def set_rules(self, rules: list[dict]) -> None:
-        """Replace the active rule set (e.g., on dungeon change). No-op
-        on `decide()` until Phase E wires up rule interpretation."""
-        self._rules = list(rules)
-        logger.info("Rule engine now holds %d rules", len(self._rules))
+    def set_rules(self, raw_rules: list[dict]) -> None:
+        """Parse and store rules. Bad entries are skipped with a warning
+        rather than failing the load — a typo'd rule shouldn't take the
+        whole app down."""
+        parsed: list[Rule] = []
+        for raw in raw_rules:
+            try:
+                parsed.append(Rule.model_validate(raw))
+            except Exception as exc:
+                logger.warning("Skipping malformed rule %r: %s", raw, exc)
+        self._rules = parsed
+        logger.info("Rule engine holds %d rules", len(self._rules))
+
+    def set_class_actions(self, actions: list[ClassAction]) -> None:
+        """Set the player's available actions. Read by priorities that
+        carry class-action filters (category / scope / has_tag /
+        lacks_tag); affects every subsequent decide() call."""
+        self._class_actions = list(actions)
+        logger.info(
+            "Rule engine has %d class actions", len(self._class_actions),
+        )
+
+    def all_phrases(self) -> list[str]:
+        """Custom TTS phrases authored in rule priorities (e.g. 'Break
+        Shield'). Used by the prerender pass so any priority.phrase that
+        references a literal string gets a cached WAV before playback.
+
+        Phrases that contain template tokens like {target} are skipped —
+        those are resolved at decide time, and the components they expand
+        to (action labels, roster names) are prerendered separately.
+        """
+        phrases: set[str] = set()
+        for rule in self._rules:
+            for prio in rule.priorities:
+                if prio.phrase and "{" not in prio.phrase:
+                    phrases.add(prio.phrase)
+        return sorted(phrases)
 
     def decide(self, ctx: RuleDecisionContext) -> RuleOutput | None:
-        """Pure policy: given a matched cast and full context, return the
-        single output to emit (or None to suppress).
-
-        Iteration-1 logic is deliberately thin:
-          - severity IGNORE → suppress
-          - any available_counters → Recommendation (using the first one;
-            Phase E will introduce priority/selection logic)
-          - otherwise → Alert with severity/phrase from the spell
-
-        Tweak this method to add policy; everything upstream is unchanged.
-        """
+        """One decision per cast — returns the single output to emit, or
+        None to suppress."""
         spell = ctx.spell
         if spell.severity == Severity.IGNORE:
             return None
 
+        # Inject engine-held state when the caller didn't supply it.
+        # Frozen dataclass → use `replace` to substitute.
+        if not ctx.class_actions and self._class_actions:
+            ctx = replace(ctx, class_actions=self._class_actions)
+
+        # Rules first, most-specific (with target_role filter) winning.
+        for rule in self._matching_rules(ctx):
+            for prio in rule.priorities:
+                result = self._eval_priority(prio, ctx)
+                if result.matched:
+                    return self._build_output(prio, ctx, spell, result.bindings)
+
+        # No rule fired — fall back to the spell's default Alert.
         target_str = f" on {ctx.cast.target}" if ctx.cast.target else ""
         duration_str = (
             f" ({ctx.cast.duration:.1f}s)" if ctx.cast.duration is not None else ""
         )
-        message = f"{spell.name}{target_str}{duration_str}"
-
-        if ctx.available_counters:
-            counter = ctx.available_counters[0]
-            return Recommendation(
-                action=counter.action,
-                target=ctx.canonical_target or ctx.cast.target or "",
-                phrase=counter.action,  # Phase D's WAV concat will combine action+target
-                message=f"{counter.action}{target_str} (for {spell.name})",
-            )
-
         return Alert(
             severity=spell.severity,
             phrase=spell.phrase,
-            message=message,
+            message=f"{spell.name}{target_str}{duration_str}",
         )
 
-    def evaluate(self, ctx: ScreenContext) -> list[RuleOutput]:
-        """Compatibility shim. Looks up each cast event in the DB, builds a
-        `RuleDecisionContext`, and dispatches to `decide()`. New callers
-        should build the context directly — this path duplicates lookup
-        work the deduper already did.
-        """
-        outputs: list[RuleOutput] = []
-        for event in ctx.cast_events:
-            spell = self.spell_db.lookup(event.spell, event.target)
-            if spell is None:
+    # ---- rule walker internals ----
+
+    def _matching_rules(self, ctx: RuleDecisionContext) -> list[Rule]:
+        matching: list[Rule] = []
+        for rule in self._rules:
+            if rule.on_cast.spell_id != ctx.spell.id:
                 continue
-            decision_ctx = RuleDecisionContext(
-                spell=spell,
-                cast=event,
-                canonical_target=event.target,
-                roster=list(ctx.roster),
-                dungeon=ctx.dungeon,
-                player_class=ctx.player_class,
-                player_spec=ctx.player_spec,
-                cooldowns=dict(ctx.cooldowns),
+            if rule.on_cast.target_role:
+                actual = ctx.roles.get(ctx.canonical_target or "")
+                if actual != rule.on_cast.target_role:
+                    continue
+            matching.append(rule)
+        # Sort more-specific (more `on_cast` filters set) first.
+        matching.sort(key=lambda r: -self._specificity(r))
+        return matching
+
+    @staticmethod
+    def _specificity(rule: Rule) -> int:
+        s = 0
+        if rule.on_cast.target_role:
+            s += 1
+        return s
+
+    def _eval_priority(
+        self, prio: Priority, ctx: RuleDecisionContext
+    ) -> _MatchResult:
+        """AND-conjunction of every set condition on the priority.
+
+        Two stages:
+          1. Class-action binding (skipped when no class-action filter
+             is set). Walks the player's library in file order and picks
+             the first action satisfying category / scope / has_tag /
+             lacks_tag whose cooldown is ready. An action is considered
+             on cooldown when ctx.cooldowns[action.cooldown_icon] is
+             True; absent keys are treated as available.
+             A failure here fails the priority outright; the bound
+             action is exposed to templates as {action.label} /
+             {action.id}.
+          2. Cast filters (target_role, target_present). Each is
+             checked only when set.
+        """
+        bindings: dict = {}
+
+        if prio.has_action_filter():
+            action = self._find_ready_action(prio, ctx)
+            if action is None:
+                return _MatchResult(False)
+            bindings["action"] = action
+
+        if prio.target_role is not None:
+            if not ctx.canonical_target:
+                return _MatchResult(False)
+            actual = ctx.roles.get(ctx.canonical_target)
+            if actual is None or actual != prio.target_role:
+                return _MatchResult(False)
+
+        if prio.target_present is not None:
+            has_target = bool(ctx.canonical_target or ctx.cast.target)
+            if has_target != prio.target_present:
+                return _MatchResult(False)
+
+        return _MatchResult(True, bindings)
+
+    @staticmethod
+    def _find_ready_action(
+        prio: Priority, ctx: RuleDecisionContext
+    ) -> ClassAction | None:
+        for action in ctx.class_actions:
+            if prio.category and action.category != prio.category:
+                continue
+            if prio.scope and action.scope != prio.scope:
+                continue
+            if prio.has_tag and prio.has_tag not in action.tags:
+                continue
+            if prio.lacks_tag and prio.lacks_tag in action.tags:
+                continue
+            if ctx.cooldowns.get(action.cooldown_icon, False):
+                continue
+            return action
+        return None
+
+    @classmethod
+    def _build_output(
+        cls,
+        prio: Priority,
+        ctx: RuleDecisionContext,
+        spell: Spell,
+        bindings: dict,
+    ) -> RuleOutput:
+        """Build an Alert or Recommendation from a fired priority.
+
+        When `do` is set, the priority is "go take this action" → emit
+        Recommendation. The TTS phrase comes from `prio.phrase` if the
+        priority overrides it (e.g. "Break Shield"); otherwise the
+        bound action's label is used so the prerendered action clip
+        plays. The pipeline's Recommendation handler stitches the
+        target name onto it at playback. When `do` is unset, the
+        priority is "just inform" → emit Alert with the spell's default
+        phrase as the TTS key; the rendered `say` shows in the log.
+        """
+        rendered = cls._render(prio.say, ctx, bindings)
+        if prio.do is not None:
+            do_value = cls._render(prio.do, ctx, bindings)
+            if prio.phrase is not None:
+                phrase = cls._render(prio.phrase, ctx, bindings)
+            else:
+                action = bindings.get("action")
+                phrase = action.label if action is not None else do_value
+            return Recommendation(
+                action=do_value,
+                target=ctx.canonical_target or ctx.cast.target or "",
+                phrase=phrase,
+                message=rendered,
             )
-            output = self.decide(decision_ctx)
-            if output is not None:
-                outputs.append(output)
-        return outputs
+        return Alert(
+            severity=spell.severity,
+            phrase=spell.phrase,
+            message=rendered,
+        )
+
+    @staticmethod
+    def _render(
+        template: str, ctx: RuleDecisionContext, bindings: dict
+    ) -> str:
+        """Render templating tokens. See rule_schema.py for the supported set.
+
+        Collapses runs of whitespace and trims edges so a template like
+        `"{action.label} {target}"` with an empty target renders to
+        `"BOP"` instead of `"BOP "`.
+        """
+        target = ctx.canonical_target or ctx.cast.target or ""
+        duration = (
+            f"{ctx.cast.duration:.1f}s" if ctx.cast.duration is not None else ""
+        )
+        s = template
+        s = s.replace("{target}", target)
+        s = s.replace("{spell}", ctx.spell.name)
+        s = s.replace("{duration}", duration)
+        action = bindings.get("action")
+        if action is not None:
+            s = s.replace("{action.label}", action.label)
+            s = s.replace("{action.id}", action.id)
+        return " ".join(s.split())

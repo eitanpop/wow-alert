@@ -1,26 +1,27 @@
 """Cast-event deduplication, two paths.
 
-Sits between the parser and the rule engine. For each incoming raw cast
-event the deduper returns one of four dispositions:
+Sits between the spell-DB lookup and the rule engine. The caller does the
+spell-DB lookup and hands the deduper `(cast_event, spell_or_None)`. The
+deduper decides whether this is a fresh cast or a duplicate.
 
-  - MATCHED_NEW       — spell DB has this spell, not yet in cache. Caches it
-                        with TTL from `Spell.duration` (authoritative) and
-                        sends to the rule engine for alert evaluation.
-  - MATCHED_DUPLICATE — spell DB has this spell, already in cache. Skip.
-  - UNMATCHED_NEW     — no spell DB entry. Fuzzy-novel against the unmatched
+Four dispositions:
+
+  - MATCHED_NEW       — spell is non-None, not yet in cache. Caches it
+                        with TTL from `Spell.duration` (authoritative).
+                        Caller forwards to the rule engine.
+  - MATCHED_DUPLICATE — spell is non-None, already in cache. Skip.
+  - UNMATCHED_NEW     — spell is None. Fuzzy-novel against the unmatched
                         cache. Caches with TTL from the OCR'd duration,
-                        hard-capped (the OCR can't be trusted). Does NOT go
-                        to the rule engine — no spell to match means no
-                        alert.
-  - UNMATCHED_DUPLICATE — no spell DB entry, fuzzy-matched against a recent
+                        hard-capped (the OCR can't be trusted).
+  - UNMATCHED_DUPLICATE — spell is None, fuzzy-matched against a recent
                           unmatched cache entry. Skip.
 
 The two caches are deliberately separate:
-- Matched cache is keyed by `(spell.id, target)` — exact, since fuzzy match
-  is already done by the spell DB lookup. Canonical id collapses OCR jitter
-  ("Spirit Bolt" / "SpiritE Bolt") to one entry automatically.
-- Unmatched cache is keyed by raw OCR text + target with fuzzy comparison at
-  lookup. Without a canonical id we can't be exact; OCR jitter will produce
+- Matched cache is keyed by `(spell.id, target)` — exact, since the caller
+  already collapsed OCR jitter via the spell-DB lookup. Canonical id
+  collapses variants like "Spirit Bolt" / "SpiritBolt" to one entry.
+- Unmatched cache is keyed by raw OCR text + target with fuzzy comparison
+  at lookup. Without a canonical id we can't be exact; OCR jitter produces
   some duplicates and that's the documented trade-off.
 """
 from __future__ import annotations
@@ -33,7 +34,6 @@ from typing import Callable
 from rapidfuzz import fuzz
 
 from wow_alert.events import CastEvent, Spell
-from wow_alert.rules import YamlSpellDb
 
 
 class Disposition(str, Enum):
@@ -49,7 +49,6 @@ class DedupeOutcome:
 
     `disposition` is the executive summary; pipeline code branches on it. The
     other fields supply detail for narrative logging and downstream use:
-      - `canonical_spell` is populated for MATCHED_* (the Spell from the DB).
       - `canonical_target` is populated for MATCHED_* when the raw OCR
         target fuzzy-matched a roster entry. The pipeline rewrites
         `cast.target` to this value before the rule engine sees it, so
@@ -60,7 +59,6 @@ class DedupeOutcome:
     """
 
     disposition: Disposition
-    canonical_spell: Spell | None
     canonical_target: str | None
     ttl_s: float
 
@@ -75,7 +73,6 @@ class _UnmatchedEntry:
 class CastDeduper:
     def __init__(
         self,
-        spell_db: YamlSpellDb,
         default_ttl_s: float = 5.0,
         max_matched_ttl_s: float = 10.0,
         max_unmatched_ttl_s: float = 10.0,
@@ -84,7 +81,6 @@ class CastDeduper:
         roster: list[str] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ):
-        self._spell_db = spell_db
         self._default_ttl_s = default_ttl_s
         self._max_matched_ttl_s = max_matched_ttl_s
         self._max_unmatched_ttl_s = max_unmatched_ttl_s
@@ -115,27 +111,42 @@ class CastDeduper:
         self._roster = list(names)
         self._roster_lower = [n.lower() for n in self._roster]
 
-    def process(self, event: CastEvent) -> DedupeOutcome:
+    def process(self, event: CastEvent, spell: Spell | None) -> DedupeOutcome:
+        """Dedupe an incoming cast.
+
+        `spell` is the caller's spell-DB lookup result; pass None when no
+        DB entry matched. The deduper never does the lookup itself —
+        callers handle that to keep this layer free of spell-DB
+        dependencies.
+        """
         now = self._clock()
         self._prune(now)
 
-        spell = self._spell_db.lookup(event.spell, event.target)
-
         if spell is not None:
             # Resolve target through roster before caching: jittered OCR
-            # variants of the same teammate name should produce the same
+            # variants of the same teammate name produce the same
             # canonical_target, hence the same cache key.
             canonical_target = self._canonical_target(event.target)
             key = (spell.id, canonical_target)
             expiry = self._matched.get(key)
             if expiry is not None and now < expiry:
                 return DedupeOutcome(
-                    Disposition.MATCHED_DUPLICATE, spell, canonical_target, 0.0
+                    Disposition.MATCHED_DUPLICATE, canonical_target, 0.0
                 )
+            # If OCR lost the target mid-cast, an incoming (spell.id, None)
+            # would otherwise look like a fresh distinct cast. Treat it as
+            # a duplicate of any live (spell.id, *) entry so a continuing
+            # cast bar doesn't re-fire when its target text drops out.
+            if canonical_target is None:
+                for (cached_spell_id, cached_target), cached_expiry in self._matched.items():
+                    if cached_spell_id == spell.id and now < cached_expiry:
+                        return DedupeOutcome(
+                            Disposition.MATCHED_DUPLICATE, cached_target, 0.0
+                        )
             ttl = self._matched_ttl(spell, event)
             self._matched[key] = now + ttl
             return DedupeOutcome(
-                Disposition.MATCHED_NEW, spell, canonical_target, ttl
+                Disposition.MATCHED_NEW, canonical_target, ttl
             )
 
         # Path B: not in spell DB. Fuzzy compare against recent unmatched.
@@ -143,13 +154,13 @@ class CastDeduper:
         # target field enough to claim it's a known roster member.
         for entry in self._unmatched:
             if self._fuzzy_match(event.spell, event.target, entry.spell, entry.target):
-                return DedupeOutcome(Disposition.UNMATCHED_DUPLICATE, None, None, 0.0)
+                return DedupeOutcome(Disposition.UNMATCHED_DUPLICATE, None, 0.0)
 
         ttl = self._unmatched_ttl(event)
         self._unmatched.append(
             _UnmatchedEntry(spell=event.spell, target=event.target, expiry=now + ttl)
         )
-        return DedupeOutcome(Disposition.UNMATCHED_NEW, None, None, ttl)
+        return DedupeOutcome(Disposition.UNMATCHED_NEW, None, ttl)
 
     def _canonical_target(self, target: str | None) -> str | None:
         """Resolve a raw OCR target to a roster entry via fuzzy match.

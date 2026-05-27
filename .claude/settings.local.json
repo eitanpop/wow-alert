@@ -4,7 +4,15 @@
       "Bash(Get-ChildItem -Path 'D:\\\\wow_rl_addon\\\\yolo' -Recurse -File -Include '*.py')",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(grep -E '\\\\.py$|^d')",
-      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' 'D:\\\\wow_rl_addon\\\\wow-alert\\\\_smoke.py')"
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' 'D:\\\\wow_rl_addon\\\\wow-alert\\\\_smoke.py')",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 10)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 6)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 20)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 30)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_rules.py -q 2>&1 | Select-Object -Last 25)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_examples_golden.py -v 2>&1 | Select-Object -Last 30)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 12)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.config import AppConfig; print\\('cli import OK'\\)\")"
     ]
   }
 }

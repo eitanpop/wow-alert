@@ -47,9 +47,7 @@ The app window opens with three panes:
 | `--window-title TITLE` | Exact window title to capture. |
 | `--confidence FLOAT` | Detection confidence threshold. |
 | `--imgsz INT` | YOLO inference resolution (long side). Must match the value used at training time. |
-| `--dungeon NAME` | Scope the spell DB + counters to this dungeon (iter 2 auto-fills). |
-| `--class NAME` | Player class for counter filtering (iter 2 auto-fills). |
-| `--spec NAME` | Player spec for counter filtering (iter 2 auto-fills). |
+| `--dungeon NAME` | Pre-calibration dungeon hint; calibration's detected dungeon supersedes it. |
 
 ### Env vars
 
@@ -88,16 +86,14 @@ Each file:
 dungeon: "Windrunner Spire"        # display name (omit for _global.yaml)
 
 spells:
-  - id: spirit_bolt
+  - id: windrunner_spire_spirit_bolt
     name: "Spirit Bolt"
     aliases: ["SpiritBolt", "SpiritE Bolt"]
     severity: danger                # danger | info | ignore
-    phrase: DANGER                  # TTS phrase key
+    phrase: KICK SPIRIT BOLT        # TTS phrase key
     duration: 2.5                   # optional; trusted over OCR if present
-    counters:
-      - {class: paladin, spec: holy, action: BOP}
 
-rules: []                           # placeholder — Phase E populates
+rules: []                           # see docs/AUTHORING.md and wow_alert/rule_schema.py
 ```
 
 ### Match logic
@@ -194,33 +190,42 @@ To target a different stack, swap the source URL and re-lock. Examples:
 
 ```
 wow_alert/
-  cli.py            # entry point: parse args, wire deps, launch UI
-  config.py         # AppConfig (pydantic) + YAML loader
-  events.py         # shared dataclasses + protocols
-  capture.py        # find window by title + grab frames via mss
-  detector.py       # YOLO wrapper
-  tracker.py        # IoU-based cast-bar tracker (new vs continuing)
-  ocr.py            # rapidocr (ONNX) wrapper
-  cast_bar.py       # pure parser: OCR tokens -> CastEvent
-  rules.py          # SpellDb + RuleEngine (fuzzy match, fail-closed)
-  audio.py          # TTS prerender + winsound playback
-  pipeline.py       # PipelineWorker: single-thread capture→detect→tracker→...
+  cli.py              # entry point: parse args, wire deps, launch UI
+  config.py           # AppConfig (pydantic) + YAML loader
+  events.py           # shared dataclasses + protocols
+  capture.py          # find window by title + grab frames via bettercam (DXGI)
+  detector.py         # YOLO wrapper
+  tracker.py          # IoU-based cast-bar tracker (new vs continuing)
+  ocr.py              # rapidocr (ONNX) wrapper
+  cast_bar.py         # pure parser: OCR tokens -> CastEvent
+  dedupe.py           # two-path cast-event deduper
+  rule_schema.py      # Pydantic models for the rule YAML
+  rules.py            # SpellDb + RuleEngine (fuzzy match, fail-closed)
+  class_library.py    # per-class+spec action catalog loader
+  dungeon_loader.py   # loads config/dungeons/<slug>.yaml + _global.yaml
+  calibration.py      # LLM-driven screen calibration (Anthropic SDK)
+  cooldown_watcher.py # HSV-saturation cooldown availability sampler
+  audio.py            # TTS prerender + winsound playback
+  paths.py            # OS user-data dir layout
+  pipeline.py         # PipelineWorker: capture→detect→tracker→OCR→rules
   ui/
     main_window.py
-    frame_widget.py # preserves aspect ratio via fit_to_window
+    frame_widget.py   # preserves aspect ratio via fit_to_window
     log_widget.py
-  tools/
-    import_spells.py  # stub; hand-edit spells.yaml for now
+    region_confirm_dialog.py
+    calibration_dialog.py
 
 config/
   app.yaml
-  spells.yaml
+  classes/<class>/<spec>.yaml      # per-class action library
+  dungeons/_global.yaml
+  dungeons/<slug>.yaml             # per-dungeon spells + rules
 
-%LOCALAPPDATA%\wow-alert\   # generated at runtime, outside the project tree
-  tts_cache/                # TTS-rendered phrase WAVs
-  calibration.yaml          # LLM-derived screen layout (iter 2+)
+%LOCALAPPDATA%\wow-alert\          # generated at runtime, outside the project tree
+  tts_cache/                       # TTS-rendered phrase WAVs
+  calibration.yaml                 # LLM-derived screen layout
 
-tests/               # pytest + pytest-qt
+tests/                             # pytest + pytest-qt
 ```
 
 ## Running tests
