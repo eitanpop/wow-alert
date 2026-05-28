@@ -95,6 +95,19 @@ class Priority(BaseModel):
             "playback uses the matched action's label."
         ),
     )
+    phrase_prefix: str | None = Field(
+        default=None,
+        description=(
+            "Templated phrase played BEFORE the main phrase so the "
+            "player hears CONTEXT first ('Arcane Salvo Devotion Aura' "
+            "instead of just 'Devotion Aura'). Default behavior when "
+            "this is unset: the spell's canonical name is used as the "
+            "prefix. Set to the empty string to explicitly disable the "
+            "prefix; set to a different template to override. Spell "
+            "names are auto-included in the prerender set so the "
+            "default works out of the box."
+        ),
+    )
 
     def has_action_filter(self) -> bool:
         """True if any class-action filter is set — i.e. this priority

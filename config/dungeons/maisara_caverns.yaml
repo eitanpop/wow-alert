@@ -1,0 +1,827 @@
+# Maisara Caverns spell database. Loaded when calibration identifies
+# this dungeon (slug: maisara_caverns).
+#
+# Authored from the method.gg ability tracker (Midnight 12.0.5):
+#   https://www.method.gg/guides/dungeons/maisara-caverns/ability-tracker
+#
+# Spell schema (authoritative: wow_alert/events.py:Spell):
+#   id / name / aliases / severity / phrase / duration / cast_by /
+#   school / interruptible / notes
+#
+# Dispel note: the tracker tags effects "via Freedom" (snare/root that
+# Blessing of Freedom or Tiger's Lust clears), "via Stoneform/Shadowmeld"
+# (racial self-cleanses), and several "dispellable" enrages (Soothe —
+# which Holy Paladin and Mistweaver lack). None are healer dispels, so no
+# dispel/snare rules are authored here. Omitted: mob self-heal buffs
+# (Regeneratin') and no-detail casts (Throw Spear, Sear) — no player
+# response. "Spectral Strikes" is cast by two trash mobs; one entry.
+
+dungeon: "Maisara Caverns"
+
+spells:
+  # ============================ TRASH ============================
+
+  # Cast by both Restless Gnarldin and Bound Defender.
+  - id: maisara_spectral_strikes
+    name: "Spectral Strikes"
+    aliases: ["Spectral Strikes", "Spectrai Strikes", "Spectral Strlkes"]
+    severity: danger
+    phrase: DEFENSIVE STRIKES
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Multi-target melee group-wide damage."
+
+  # ---- Frenzied Berserker ----
+  - id: maisara_blood_frenzy
+    name: "Blood Frenzy"
+    aliases: ["Blood Frenzy", "Blood Frenzv", "Bl0od Frenzy"]
+    severity: info
+    phrase: BERSERKER ENRAGED
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Frenzied Berserker enrage that increases tank damage taken (Soothe-able)."
+
+  # ---- Dread Souleater ----
+  - id: maisara_necrotic_wave
+    name: "Necrotic Wave"
+    aliases: ["Necrotic Wave", "Necrotlc Wave", "Necrotic Wav3"]
+    severity: danger
+    phrase: DEFENSIVE NECROTIC
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Dread Souleater unavoidable group-wide damage plus debuff."
+
+  - id: maisara_rain_of_toads
+    name: "Rain of Toads"
+    aliases: ["Rain of Toads", "Rain of T0ads", "Raln of Toads"]
+    severity: info
+    phrase: DODGE TOADS
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Dread Souleater avoidable swirly ground effect."
+
+  # ---- Keen Headhunter ----
+  - id: maisara_hooked_snare
+    name: "Hooked Snare"
+    aliases: ["Hooked Snare", "Hooked Snar3", "Hooked Snare"]
+    severity: danger
+    phrase: KICK SNARE
+    cast_by: mob
+    school: physical
+    interruptible: true
+    notes: "Keen Headhunter. Interrupt; applies a snare (Freedom/Tiger's Lust clears it)."
+
+  # ---- Hulking Juggernaut ----
+  - id: maisara_rending_gore
+    name: "Rending Gore"
+    aliases: ["Rending Gore", "Rendlng Gore", "Rending G0re"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Hulking Juggernaut high tank hit with a bleed."
+
+  - id: maisara_deafening_roar
+    name: "Deafening Roar"
+    aliases: ["Deafening Roar", "Deafenlng Roar", "Deafening R0ar"]
+    severity: danger
+    phrase: DEFENSIVE ROAR
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Hulking Juggernaut unavoidable group-wide damage."
+
+  # ---- Bramblemaw Bear ----
+  - id: maisara_crunch_armor
+    name: "Crunch Armor"
+    aliases: ["Crunch Armor", "Cruncn Armor", "Crunch Arm0r"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Bramblemaw Bear tank hit that reduces armor."
+
+  # ---- Hexbound Eagle ----
+  - id: maisara_diseased_claws
+    name: "Diseased Claws"
+    aliases: ["Diseased Claws", "Diseased Ciaws", "Dlseased Claws"]
+    severity: info
+    phrase: EAGLE ENRAGED
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Hexbound Eagle enrage that increases tank damage taken (Soothe-able)."
+
+  - id: maisara_shredding_talons
+    name: "Shredding Talons"
+    aliases: ["Shredding Talons", "Shreddlng Talons", "Shredding Tai0ns"]
+    severity: danger
+    phrase: STOP TALONS
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Hexbound Eagle frontal channel on the tank. Stop with CC (stun/knockback)."
+
+  # ---- Ritual Hexxer ----
+  - id: maisara_shadow_bolt
+    name: "Shadow Bolt"
+    aliases: ["Shadow Bolt", "Shadow Boit", "Shad0w Bolt"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Ritual Hexxer filler cast. Interrupt."
+
+  - id: maisara_hex
+    name: "Hex"
+    aliases: ["Hex", "Hexx", "H3x"]
+    severity: danger
+    phrase: KICK HEX
+    cast_by: mob
+    school: nature
+    interruptible: true
+    notes: "Ritual Hexxer. Interrupt before the CC lands."
+
+  # ---- Hex Guardian ----
+  - id: maisara_searing_presence
+    name: "Searing Presence"
+    aliases: ["Searing Presence", "Searlng Presence", "Searing Presenc3"]
+    severity: danger
+    phrase: DEFENSIVE SEARING
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Hex Guardian group-wide proximity damage."
+
+  - id: maisara_magma_surge
+    name: "Magma Surge"
+    aliases: ["Magma Surge", "Magma Surg3", "Maqma Surge"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Hex Guardian fire frontal cone."
+
+  - id: maisara_ritual_firebrand
+    name: "Ritual Firebrand"
+    aliases: ["Ritual Firebrand", "Rituai Firebrand", "Ritual Flrebrand"]
+    severity: info
+    phrase: DODGE FIREBRAND
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Hex Guardian fire ground zone."
+
+  # ---- Umbral Shadowbinder ----
+  - id: maisara_shrink
+    name: "Shrink"
+    aliases: ["Shrink", "Shrlnk", "Shrinkk"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Umbral Shadowbinder. Interrupt or stop with CC."
+
+  - id: maisara_shadow_burst
+    name: "Shadow Burst"
+    aliases: ["Shadow Burst", "Shadow Bursl", "Shad0w Burst"]
+    severity: info
+    phrase: DODGE SHADOW BURST
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Umbral Shadowbinder avoidable swirly ground effect."
+
+  # ---- Grim Skirmisher ----
+  - id: maisara_grim_ward
+    name: "Grim Ward"
+    aliases: ["Grim Ward", "Grlm Ward", "Grim Werd"]
+    severity: danger
+    phrase: DEFENSIVE GRIM WARD
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Grim Skirmisher group-wide damage plus a defensive self-buff."
+
+  # ---- Restless Gnarldin ----
+  - id: maisara_staggering_blow
+    name: "Staggering Blow"
+    aliases: ["Staggering Blow", "Staggerlng Blow", "Staggering Bl0w"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Restless Gnarldin high tank hit with a debuff."
+
+  - id: maisara_ancestral_crush
+    name: "Ancestral Crush"
+    aliases: ["Ancestral Crush", "Ancestrai Crush", "Ancestral Crusn"]
+    severity: info
+    phrase: DODGE CRUSH
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Restless Gnarldin avoidable ground effect."
+
+  # ---- Reanimated Warrior ----
+  - id: maisara_dread_slash
+    name: "Dread Slash"
+    aliases: ["Dread Slash", "Dread Siash", "Dread Slasn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Reanimated Warrior tank hit with a damage self-buff."
+
+  - id: maisara_reanimation
+    name: "Reanimation"
+    aliases: ["Reanimation", "Reanimati0n", "Reanlmation"]
+    severity: danger
+    phrase: KICK REANIMATION
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Reanimated Warrior revive channel. Interrupt or stop with CC."
+
+  # ---- Tormented Shade ----
+  - id: maisara_spirit_rend
+    name: "Spirit Rend"
+    aliases: ["Spirit Rend", "Spirlt Rend", "Spirit Rendd"]
+    severity: danger
+    phrase: KICK SPIRIT REND
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Tormented Shade. Interrupt. Important."
+
+  # ---- Bound Defender ----
+  - id: maisara_soulstorms
+    name: "Soulstorms"
+    aliases: ["Soulstorms", "Souistorms", "Soulst0rms"]
+    severity: info
+    phrase: DODGE SOULSTORMS
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Bound Defender avoidable swirly zones."
+
+  - id: maisara_vigilant_defense
+    name: "Vigilant Defense"
+    aliases: ["Vigilant Defense", "Vigiiant Defense", "Vigilant Defens3"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Bound Defender frontal cone."
+
+  # ---- Rokh'zal ----
+  - id: maisara_invoke_shadow
+    name: "Invoke Shadow"
+    aliases: ["Invoke Shadow", "Invoke Shad0w", "lnvoke Shadow"]
+    severity: info
+    phrase: DODGE SHADOW
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Rokh'zal avoidable ground mechanic."
+
+  - id: maisara_ritual_sacrifice
+    name: "Ritual Sacrifice"
+    aliases: ["Ritual Sacrifice", "Rituai Sacrifice", "Ritual Sacriflce"]
+    severity: danger
+    phrase: RITUAL SACRIFICE
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Rokh'zal single-target debuff (Freedom clears the snare). Important."
+
+  # ---- Hollow Soulrender ----
+  - id: maisara_shadowfrost_blast
+    name: "Shadowfrost Blast"
+    aliases: ["Shadowfrost Blast", "Shadowfrost Biast", "Shad0wfrost Blast"]
+    severity: danger
+    phrase: KICK SHADOWFROST
+    cast_by: mob
+    school: frost
+    interruptible: true
+    notes: "Hollow Soulrender tank-hit cast. Interrupt to prevent it."
+
+  - id: maisara_rend_souls
+    name: "Rend Souls"
+    aliases: ["Rend Souls", "Rend Souis", "Rend S0uls"]
+    severity: info
+    phrase: DODGE REND SOULS
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Hollow Soulrender avoidable ground zones."
+
+  - id: maisara_frost_nova
+    name: "Frost Nova"
+    aliases: ["Frost Nova", "Frost Nove", "Fr0st Nova"]
+    severity: info
+    phrase: DODGE FROST NOVA
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Hollow Soulrender ground slow (Freedom clears the snare)."
+
+  # ---- Gloomwing Bat ----
+  - id: maisara_piercing_screech
+    name: "Piercing Screech"
+    aliases: ["Piercing Screech", "Plercing Screech", "Piercing Screecn"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: physical
+    interruptible: true
+    notes: "Gloomwing Bat frontal tank-hit cast. Interrupt."
+
+  # ---- Zil'jan ----
+  - id: maisara_ritual_drums
+    name: "Ritual Drums"
+    aliases: ["Ritual Drums", "Rituai Drums", "Ritual Drurns"]
+    severity: danger
+    phrase: DEFENSIVE DRUMS
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Zil'jan group-wide damage plus avoidable zones. Important."
+
+  # ====================== MURO'JIN AND NEKRAXX ======================
+  - id: maisara_revive_pet
+    name: "Revive Pet"
+    aliases: ["Revive Pet", "Revlve Pet", "Revive Pett"]
+    severity: info
+    phrase: KILL PET
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx resummon the beast."
+
+  - id: maisara_bestial_wrath
+    name: "Bestial Wrath"
+    aliases: ["Bestial Wrath", "Bestiai Wrath", "Bestial Wratn"]
+    severity: info
+    phrase: BESTIAL WRATH
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx enrage damage increase (Soothe-able)."
+
+  - id: maisara_flanking_spear
+    name: "Flanking Spear"
+    aliases: ["Flanking Spear", "Flanklng Spear", "Flanking Spe ar"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx tank hit with a knock-up."
+
+  - id: maisara_infected_pinions
+    name: "Infected Pinions"
+    aliases: ["Infected Pinions", "Infected Pinlons", "lnfected Pinions"]
+    severity: danger
+    phrase: DEFENSIVE PINIONS
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Muro'jin and Nekraxx group-wide DoT damage."
+
+  - id: maisara_freezing_trap
+    name: "Freezing Trap"
+    aliases: ["Freezing Trap", "Freezlng Trap", "Freezing Trep"]
+    severity: info
+    phrase: DODGE TRAP
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Muro'jin and Nekraxx freeze ground/CC."
+
+  - id: maisara_fetid_quillstorm
+    name: "Fetid Quillstorm"
+    aliases: ["Fetid Quillstorm", "Fetld Quillstorm", "Fetid Quiilstorm"]
+    severity: info
+    phrase: DODGE QUILLSTORM
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx avoidable swirly ground effect."
+
+  - id: maisara_barrage
+    name: "Barrage"
+    aliases: ["Barrage", "Barrag3", "Barrege"]
+    severity: danger
+    phrase: DODGE BARRAGE
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx frontal line attack with a debuff."
+
+  - id: maisara_carrion_swoop
+    name: "Carrion Swoop"
+    aliases: ["Carrion Swoop", "Carrlon Swoop", "Carrion Sw00p"]
+    severity: info
+    phrase: DODGE SWOOP
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Muro'jin and Nekraxx frontal cone with a knock-up."
+
+  # ============================== VORDAZA ==============================
+  - id: maisara_withering_miasma
+    name: "Withering Miasma"
+    aliases: ["Withering Miasma", "Witherlng Miasma", "Withering Miasrna"]
+    severity: danger
+    phrase: DEFENSIVE MIASMA
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Vordaza group-wide damage plus an enrage self-buff."
+
+  - id: maisara_drain_soul
+    name: "Drain Soul"
+    aliases: ["Drain Soul", "Draln Soul", "Drain Soui"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Vordaza high tank hit with a debuff."
+
+  - id: maisara_wrest_phantoms
+    name: "Wrest Phantoms"
+    aliases: ["Wrest Phantoms", "Wresl Phantoms", "Wrest Phant0ms"]
+    severity: danger
+    phrase: DEFENSIVE PHANTOMS
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Vordaza group-wide damage; spawns adds and avoidable zones."
+
+  - id: maisara_unmake
+    name: "Unmake"
+    aliases: ["Unmake", "Unmak3", "Unrnake"]
+    severity: info
+    phrase: DODGE UNMAKE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Vordaza frontal cone with a knock-up."
+
+  - id: maisara_necrotic_convergence
+    name: "Necrotic Convergence"
+    aliases: ["Necrotic Convergence", "Necrotlc Convergence", "Necrotic Converqence"]
+    severity: danger
+    phrase: KICK CONVERGENCE
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Vordaza group-wide damage. Interrupt; otherwise use a raid defensive."
+
+  # ==================== RAK'TUL, VESSEL OF SOULS ====================
+  - id: maisara_deathgorged_vessel
+    name: "Deathgorged Vessel"
+    aliases: ["Deathgorged Vessel", "Deathgorged Vessei", "Deathg0rged Vessel"]
+    severity: danger
+    phrase: DEFENSIVE VESSEL
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Rak'tul group-wide damage plus avoidable zones."
+
+  - id: maisara_spiritbreaker
+    name: "Spiritbreaker"
+    aliases: ["Spiritbreaker", "Spiritbreaker", "Spirltbreaker"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Rak'tul tank hit with a knock-up and avoidable ground."
+
+  - id: maisara_crush_souls
+    name: "Crush Souls"
+    aliases: ["Crush Souls", "Crusn Souls", "Crush Souis"]
+    severity: info
+    phrase: KILL ADDS
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Rak'tul spawns adds plus avoidable ground."
+
+  - id: maisara_soulbind
+    name: "Soulbind"
+    aliases: ["Soulbind", "Souibind", "Soulblnd"]
+    severity: danger
+    phrase: DEFENSIVE SOULBIND
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Rak'tul group-wide damage; avoidable zones and CC."
+
+  - id: maisara_soulrending_roar
+    name: "Soulrending Roar"
+    aliases: ["Soulrending Roar", "Soulrendlng Roar", "Soulrending R0ar"]
+    severity: danger
+    phrase: DEFENSIVE SOULREND
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Rak'tul group-wide damage; spawns adds, avoidable zones, and CC."
+
+  - id: maisara_eternal_suffering
+    name: "Eternal Suffering"
+    aliases: ["Eternal Suffering", "Eternai Suffering", "Eternal Sufferlng"]
+    severity: danger
+    phrase: KICK SUFFERING
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Rak'tul group-wide ground/CC. Interrupt; otherwise use a raid defensive."
+
+  # ---- Lost Soul (summoned by Rak'tul) ----
+  - id: maisara_cries_of_the_fallen
+    name: "Cries of the Fallen"
+    aliases: ["Cries of the Fallen", "Cries of the Falien", "Cries of the Fal len"]
+    severity: danger
+    phrase: CRIES OF THE FALLEN
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Lost Soul single-target debuff (Freedom clears it)."
+
+# ============================== RULES ==============================
+# Class-agnostic: each priority binds whatever the calibrated class
+# library offers; if nothing matches, the engine falls through to the
+# spell's default phrase.
+#
+# Patterns:
+#   interrupt      category: interrupt → kick the caster
+#   stop           category: stop → cc (knockback/stun the channel)
+#   tank-external  single_target defensive, lacks_tag aggro_dropping
+#                  (Sac / Cocoon, not BoP — BoP drops threat)
+#   party-wide     party_wide defensive → party_wide heal → spell default
+rules:
+  # ---------------- Interrupts ----------------
+  - on_cast: { spell_id: maisara_hooked_snare }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_shadow_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_hex }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_shrink }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_reanimation }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_spirit_rend }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_shadowfrost_blast }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_piercing_screech }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # Interruptible boss casts that also pulse the group — kick first,
+  # otherwise soften with a raid defensive / heal.
+  - on_cast: { spell_id: maisara_necrotic_convergence }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_eternal_suffering }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---------------- Stop (CC the channel, not a kick) ----------------
+  - on_cast: { spell_id: maisara_shredding_talons }
+    priorities:
+      - category: stop
+        say: "{action.label} the channel"
+        do: "{action.id}"
+      - category: cc
+        say: "{action.label} the caster"
+        do: "{action.id}"
+
+  # ---------------- Tank busters (boss) ----------------
+  # Trash tank hits (Rending Gore, Crunch Armor, Staggering Blow, Dread
+  # Slash) are left as plain alerts — externals are saved for boss hits.
+  - on_cast: { spell_id: maisara_flanking_spear }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_drain_soul }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_spiritbreaker }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Party-wide damage ----------------
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: maisara_spectral_strikes }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_necrotic_wave }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_deafening_roar }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_searing_presence }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_grim_ward }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_ritual_drums }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_infected_pinions }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_withering_miasma }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_wrest_phantoms }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_deathgorged_vessel }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_soulbind }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: maisara_soulrending_roar }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

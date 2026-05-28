@@ -203,13 +203,17 @@ class CastDeduper:
     def _matched_ttl(self, spell: Spell, event: CastEvent) -> float:
         """Authoritative TTL for matched casts comes from the spell DB.
 
-        If `Spell.duration` is null, fall back to the OCR'd duration (it's
-        less trustworthy but better than nothing), then to the configured
-        default. Hard-capped to guard against either source being garbage.
+        If `Spell.duration` is null, fall back to the OCR'd duration — but
+        only when it's plausible (0 < d <= cap). An OCR duration above the
+        cap is a misread ("25.0s" for a 2.5s cast, or a health value like
+        "603720" bleeding into the bar); trusting it would mute a real
+        recast for the whole cap window, so we discard it and use the
+        default instead. The DB value, being author-controlled, is still
+        only clamped (not discarded).
         """
         if spell.duration is not None:
             ttl = spell.duration
-        elif event.duration is not None:
+        elif event.duration is not None and 0 < event.duration <= self._max_matched_ttl_s:
             ttl = event.duration
         else:
             ttl = self._default_ttl_s
@@ -218,10 +222,15 @@ class CastDeduper:
     def _unmatched_ttl(self, event: CastEvent) -> float:
         """Unmatched casts can't trust any single source.
 
-        Use the OCR'd duration if present, otherwise the default, hard-capped
-        at `max_unmatched_ttl_s` (default 10s — the user's rule of thumb).
+        Use the OCR'd duration only when it's plausible (0 < d <= cap);
+        a value above the cap is a misread (health/percent text bleeding
+        into the read), so discard it and use the default rather than
+        clamping garbage up to the ceiling.
         """
-        ttl = event.duration if event.duration is not None else self._default_ttl_s
+        if event.duration is not None and 0 < event.duration <= self._max_unmatched_ttl_s:
+            ttl = event.duration
+        else:
+            ttl = self._default_ttl_s
         return max(0.0, min(ttl, self._max_unmatched_ttl_s))
 
     # ---- helpers ----

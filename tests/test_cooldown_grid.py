@@ -4,13 +4,23 @@ Synthesizes images with colored squares on dark backgrounds — the
 detector's job is to find the squares and return bboxes in grid order.
 Replaces the LLM-based per-icon bbox detection in calibration; making
 sure it doesn't regress is important.
+
+Plus one deterministic regression test against a real WoW cooldown-
+manager crop (`tests/fixtures/cooldown_manager_real.png`) — locks in
+that the detector works on actual native-cooldown-manager pixels and
+catches future tuning that breaks real-world detection.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 import cv2
 import numpy as np
 
 from wow_alert.cooldown_grid import find_icon_bboxes
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _make_icon_grid(
@@ -70,12 +80,19 @@ class TestFindIconBboxes:
             xs = [found[row_start + i][0] for i in range(3)]
             assert xs == sorted(xs)
 
-    def test_ignores_low_saturation_noise(self):
-        # Background near-gray (low saturation) should not produce
-        # contours; only the saturated square is found.
+    def test_ignores_bright_background_with_dark_borders(self):
+        # The dark-border-based detector finds icons by their thin dark
+        # borders. Here we paint a bright icon (red) surrounded by a
+        # thin dark border on a bright background. The icon should be
+        # detected; the bright background outside the dark border is
+        # one connected region but its size filters it out (we cap
+        # icon size at _MAX_ICON_PX = 200).
         h, w = 200, 300
-        img = np.full((h, w, 3), 50, dtype=np.uint8)  # near-gray
-        img[40:100, 40:100] = (0, 0, 255)  # saturated red
+        img = np.full((h, w, 3), 200, dtype=np.uint8)  # bright background
+        # Dark border ring at (38..102, 38..102)
+        img[38:102, 38:102] = (0, 0, 0)
+        # Bright red icon inside the border at (40..100, 40..100)
+        img[40:100, 40:100] = (40, 40, 255)
         found = find_icon_bboxes(img)
         assert len(found) == 1
         x1, y1, x2, y2 = found[0]
@@ -99,6 +116,127 @@ class TestFindIconBboxes:
     def test_empty_input(self):
         assert find_icon_bboxes(np.zeros((0, 0, 3), dtype=np.uint8)) == []
         assert find_icon_bboxes(None) == []  # type: ignore[arg-type]
+
+    def _assert_clean_detection(
+        self,
+        bboxes: list[tuple[int, int, int, int]],
+        *,
+        expected_min: int,
+        expected_max: int,
+        aspect_min: float = 0.5,
+        aspect_max: float = 1.7,
+        max_overlap_frac: float = 0.25,
+    ) -> None:
+        """Shared structural checks for real-fixture detections.
+
+        Asserts the detection count falls in the expected range, every
+        bbox is roughly square, no pair of bboxes overlaps significantly
+        (the whole point of the detector is to find SEPARATE icons),
+        and the bboxes come out in top-to-bottom reading order.
+        """
+        assert expected_min <= len(bboxes) <= expected_max, (
+            f"expected {expected_min}-{expected_max} icons, got {len(bboxes)}"
+        )
+        for x1, y1, x2, y2 in bboxes:
+            w, h = x2 - x1, y2 - y1
+            aspect = w / h
+            assert aspect_min <= aspect <= aspect_max, (
+                f"non-square bbox {(x1, y1, x2, y2)} aspect={aspect:.2f}"
+            )
+        for i, a in enumerate(bboxes):
+            for j in range(i + 1, len(bboxes)):
+                b = bboxes[j]
+                ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+                ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+                if ix2 <= ix1 or iy2 <= iy1:
+                    continue
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                area_a = (a[2] - a[0]) * (a[3] - a[1])
+                area_b = (b[2] - b[0]) * (b[3] - b[1])
+                overlap_frac = inter / min(area_a, area_b)
+                assert overlap_frac < max_overlap_frac, (
+                    f"bboxes {a} and {b} overlap by {overlap_frac:.0%}"
+                )
+        if len(bboxes) >= 2:
+            first_y = (bboxes[0][1] + bboxes[0][3]) / 2
+            last_y = (bboxes[-1][1] + bboxes[-1][3]) / 2
+            assert first_y <= last_y, "bboxes not in top-to-bottom order"
+
+    def test_real_cooldown_manager_monk(self):
+        """Regression test on a real native-cooldown-manager crop —
+        monk character, mid-tone dungeon background, 14 icons across
+        three rows (mix of ~60 px and ~40 px icons)."""
+        crop = cv2.imread(str(FIXTURES / "cooldown_manager_real.png"))
+        assert crop is not None
+        bboxes = find_icon_bboxes(crop)
+        self._assert_clean_detection(bboxes, expected_min=12, expected_max=16)
+
+    def test_real_cooldown_manager_paladin(self):
+        """Different character (paladin), different bar layout, same
+        environment — 14 visible icons. The bar has different icon-art
+        characteristics (Lightsmith abilities with mostly-dark
+        interiors) which has historically been the failure case for
+        contour-based detectors."""
+        crop = cv2.imread(str(FIXTURES / "cooldown_manager_paladin.png"))
+        assert crop is not None
+        bboxes = find_icon_bboxes(crop)
+        self._assert_clean_detection(bboxes, expected_min=12, expected_max=16)
+
+    def test_real_screenshot_handles_2x_nearest_upscale(self):
+        """A player on a higher native resolution sees larger icons AND
+        larger gaps between them (because the whole UI is rendered at
+        a higher resolution, not interpolated up). INTER_NEAREST
+        simulates that — sharp scale-up with no blur between icons.
+        Detector must still find the same icons cleanly."""
+        crop = cv2.imread(str(FIXTURES / "cooldown_manager_real.png"))
+        h, w = crop.shape[:2]
+        upscaled = cv2.resize(
+            crop, (w * 2, h * 2), interpolation=cv2.INTER_NEAREST,
+        )
+        bboxes = find_icon_bboxes(upscaled)
+        self._assert_clean_detection(bboxes, expected_min=12, expected_max=18)
+
+    def test_real_screenshot_handles_huge_pad(self):
+        """When the user-confirmed cooldown region is loose (lots of
+        surrounding game-world padding), the detector must still find
+        the icons — game-world pixels shouldn't be mistaken for icons.
+        """
+        crop = cv2.imread(str(FIXTURES / "cooldown_manager_real.png"))
+        # Pad with a copy of an adjacent region of game world. The
+        # existing crop already includes some game world at top/right;
+        # tile it for additional padding on all sides.
+        h, w = crop.shape[:2]
+        padded = np.zeros((h + 100, w + 100, 3), dtype=np.uint8)
+        # Fill with a tiled sample of the game world (top-left corner of
+        # the crop, which the existing fixture confirms is background).
+        bg_sample = crop[0:40, 0:40]
+        bg_h, bg_w = bg_sample.shape[:2]
+        for y in range(0, padded.shape[0], bg_h):
+            for x in range(0, padded.shape[1], bg_w):
+                yend = min(y + bg_h, padded.shape[0])
+                xend = min(x + bg_w, padded.shape[1])
+                padded[y:yend, x:xend] = bg_sample[: yend - y, : xend - x]
+        # Drop the actual cooldown crop in the center.
+        padded[50:50 + h, 50:50 + w] = crop
+        bboxes = find_icon_bboxes(padded)
+        # Same 14 icons, just offset by (50, 50) in the padded image.
+        self._assert_clean_detection(bboxes, expected_min=12, expected_max=18)
+
+    def test_tiny_scale_fails_gracefully(self):
+        """At small UI scales the icons drop below _MIN_ICON_PX (20)
+        and aren't detected. This must be a clean 'no detections'
+        return, not a crash — the calibration flow surfaces the empty
+        result and the user re-confirms a tighter region."""
+        crop = cv2.imread(str(FIXTURES / "cooldown_manager_real.png"))
+        h, w = crop.shape[:2]
+        tiny = cv2.resize(
+            crop, (w // 3, h // 3), interpolation=cv2.INTER_AREA,
+        )
+        bboxes = find_icon_bboxes(tiny)
+        # Don't assert exact 0 — extremely small icons might still be
+        # ambiguously detected. Just verify we don't crash and don't
+        # over-detect from a low-resolution input.
+        assert len(bboxes) <= 5
 
     def test_handles_mixed_row_alignment(self):
         # Two rows where one icon is shifted slightly up — should still

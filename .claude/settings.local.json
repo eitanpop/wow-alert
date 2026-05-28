@@ -28,7 +28,16 @@
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_icon_label_dialog.py -v 2>&1 | Select-Object -Last 20)",
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.ui.main_window import MainWindow; from wow_alert.ui.icon_label_dialog import IconLabelDialog; print\\('imports OK'\\)\")",
       "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_cooldown_grid.py -v 2>&1 | Select-Object -Last 15)",
-      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.cooldown_grid import find_icon_bboxes; from wow_alert.calibration import calibrate_read; print\\('imports OK'\\)\")"
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -c \"from wow_alert.cli import build_app; from wow_alert.cooldown_grid import find_icon_bboxes; from wow_alert.calibration import calibrate_read; print\\('imports OK'\\)\")",
+      "Bash(D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe -c ' *)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_cooldown_grid.py -q 2>&1 | Select-Object -Last 5)",
+      "Read(//c/Users/eitan/Desktop/**)",
+      "Bash(cp \"C:/Users/eitan/Desktop/cds.png\" \"D:/wow_rl_addon/wow-alert/tests/fixtures/\")",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-Object -Last 5)",
+      "PowerShell(& 'D:\\\\wow_rl_addon\\\\wow-alert\\\\.venv\\\\Scripts\\\\python.exe' -m pytest tests/test_cooldown_grid.py -v 2>&1 | Select-Object -Last 16)",
+      "WebFetch(domain:www.method.gg)",
+      "WebFetch(domain:www.icy-veins.com)",
+      "Bash(\"D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe\" -m pytest -q)"
     ]
   }
 }

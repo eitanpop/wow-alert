@@ -294,16 +294,26 @@ class PipelineWorker(QObject):
                 self.error.emit("rules", str(exc))
                 return
             if isinstance(output, Alert):
-                try:
-                    self._deps.alert_player.play(output.phrase)
-                except Exception as exc:
-                    self.error.emit("audio", str(exc))
+                # An empty phrase means "recognize the cast but stay silent"
+                # — e.g. an interruptible filler the player's spec can't kick.
+                # The alert still emits (logged / shown) so the cast is
+                # tracked; only the audio is suppressed.
+                if output.phrase.strip():
+                    try:
+                        self._deps.alert_player.play(output.phrase)
+                    except Exception as exc:
+                        self.error.emit("audio", str(exc))
                 self.alert.emit(output)
             elif isinstance(output, Recommendation):
                 # The AlertPlayer's list-of-phrases form stitches the
-                # action label and the target name into one clip
-                # ("BOP Captain Garrick") from the two prerendered WAVs.
-                parts = [output.phrase]
+                # prerendered WAVs end-to-end. The optional prefix lets
+                # rules construct "{spell} {action.label} {target}"
+                # style multi-part callouts like
+                # "Arcane Salvo Revival Captain Garrick".
+                parts: list[str] = []
+                if output.phrase_prefix:
+                    parts.append(output.phrase_prefix)
+                parts.append(output.phrase)
                 if output.target:
                     parts.append(output.target)
                 try:

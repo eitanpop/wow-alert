@@ -36,26 +36,30 @@ actions:
     spell_id: 116849
 
   # ---- Single-target utility ----
+  # Tiger's Lust clears snares/roots and adds speed — NOT damage
+  # mitigation, so it lives under `utility` (not `defensive`) to keep
+  # tank-buster/defensive rules from binding it. The snare_break tag
+  # drives the (deferred) snare-break callouts.
   - id: tigers_lust
     label: "Tiger's Lust"
-    category: defensive
+    category: utility
     scope: single_target
     tags: [snare_break]
     spell_id: 116841
 
-  # ---- Party/raid-wide emergency heal (also a magic dispel) ----
-  # Revival is a raid heal AND a party-wide magic dispel. We tag it
-  # so a dispel-magic rule can bind it as a fallback when Detox is on
-  # cooldown, but in practice Detox should bind first (it's the
-  # on-demand single-target option earlier in the file).
-  - id: revival
-    label: "Revival"
+  # ---- Party-wide healing cooldowns, in PREFERENCE ORDER ----
+  # The engine binds the first matching action in file order, so a
+  # "heal, party_wide" rule picks Celestial Conduit → Yu'lon → Revival.
+  # Celestial Conduit (Conduit of the Celestials hero talent) and Yu'lon
+  # are sustained throughput CDs; Revival is a precious instant burst we
+  # save for emergencies, so it sits last among the heals.
+
+  - id: celestial_conduit
+    label: "Celestial Conduit"
     category: heal
     scope: party_wide
-    tags: [emergency_only, party_dispel, magic]
-    spell_id: 115310
+    spell_id: 443028
 
-  # ---- Party-wide throughput cooldown ----
   # Yu'lon and Chi-Ji are healing cooldowns, NOT damage reduction.
   # Categorized as `heal` rather than `defensive` so rules asking for
   # damage reduction don't mistakenly bind them.
@@ -64,6 +68,30 @@ actions:
     category: heal
     scope: party_wide
     spell_id: 322118
+
+  # ---- Dispels ----
+  # Detox: single-target, magic only at baseline (Improved Detox adds
+  # poison + disease — add those tags if talented). Listed before Revival
+  # so single-target dispel rules prefer it over the raid cooldown.
+  - id: detox
+    label: "Detox"
+    category: dispel
+    scope: single_target
+    tags: [magic]
+    spell_id: 218164
+
+  # Revival is DUAL-PURPOSE: a party-wide heal (lowest priority — it
+  # follows the heal CDs above) AND a mass dispel of Magic, Poison, and
+  # Disease. `category: [heal, dispel]` lets both heal/party_wide and
+  # dispel/party_wide rules bind it; the magic/poison/disease tags let a
+  # type-specific dispel rule pick it. emergency_only flags it as a
+  # save-it-for-trouble cooldown.
+  - id: revival
+    label: "Revival"
+    category: [heal, dispel]
+    scope: party_wide
+    tags: [magic, poison, disease, emergency_only]
+    spell_id: 115310
 
   # ---- Self defensives ----
   - id: fortifying_brew
@@ -77,16 +105,6 @@ actions:
     category: defensive
     scope: self
     spell_id: 122278
-
-  # ---- Dispels ----
-  # Baseline Detox removes magic only. With Improved Detox talented,
-  # add poison and disease to the tags below.
-  - id: detox
-    label: "Detox"
-    category: dispel
-    scope: single_target
-    tags: [magic]
-    spell_id: 218164
 
   # ---- Crowd control ----
   - id: paralysis
@@ -108,14 +126,6 @@ actions:
     category: stop
     scope: party_wide
     spell_id: 116844
-
-  # ---- Combat resurrection ----
-  - id: resuscitate
-    label: "Brez"
-    category: heal
-    scope: single_target
-    tags: [combat_res, out_of_combat_only]
-    spell_id: 115178
 
   # ---- Choice-node alternates (uncomment whichever side the build uses) ----
   #

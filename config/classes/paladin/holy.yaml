@@ -43,9 +43,13 @@ actions:
     spell_id: 204018
 
   # ---- Single-target utility ----
+  # Freedom only clears snares/roots — it is NOT damage mitigation, so it
+  # lives under `utility` (not `defensive`) to keep tank-buster/defensive
+  # rules from binding it. The snare_break tag drives the (deferred)
+  # snare-break callouts.
   - id: blessing_of_freedom
     label: "Freedom"
-    category: defensive
+    category: utility
     scope: single_target
     tags: [snare_break]
     spell_id: 1044
@@ -84,15 +88,24 @@ actions:
     scope: single_target
     spell_id: 432459
 
-  # ---- Healing throughput cooldown ----
+  # ---- Healing throughput cooldowns ----
   # Avenging Wrath buffs Holy's healing output for the duration. Lives
-  # under `heal` rather than `defensive` because it doesn't reduce
-  # incoming damage — it lets the healer outheal it.
+  # under `heal` (scope self) rather than `defensive` because it doesn't
+  # reduce incoming damage — it lets the healer outheal it.
   - id: avenging_wrath
     label: "Avenging Wrath"
     category: heal
     scope: self
     spell_id: 31884
+
+  # Divine Toll fires five Holy Shocks at once — a burst of party-wide
+  # healing. This is Holy's heal/party_wide option, so party-wide-damage
+  # rules can fall back to it when Aura Mastery / Devotion Aura are down.
+  - id: divine_toll
+    label: "Divine Toll"
+    category: heal
+    scope: party_wide
+    spell_id: 375576
 
   # ---- Heals ----
   - id: lay_on_hands
@@ -103,13 +116,13 @@ actions:
     spell_id: 633
 
   # ---- Dispels ----
-  # Baseline Cleanse removes magic only. With Improved Cleanse talented,
-  # add poison and disease to the tags below.
+  # Holy's Cleanse removes Magic, Poison, and Disease from an ally.
+  # (Paladins cannot dispel curses — no `curse` tag here.)
   - id: cleanse
     label: "Cleanse"
     category: dispel
     scope: single_target
-    tags: [magic]
+    tags: [magic, poison, disease]
     spell_id: 4987
 
   # ---- Crowd control ----
@@ -134,3 +147,31 @@ actions:
   #   scope: single_target
   #   tags: [melee_range]
   #   spell_id: 96231
+
+  # ---- Talent alternates (uncomment whichever the build uses) ----
+  #
+  # Avenging Crusader replaces Avenging Wrath on its choice node — the
+  # melee-healing variant. Swap it in for avenging_wrath above.
+  # - id: avenging_crusader
+  #   label: "Avenging Crusader"
+  #   category: heal
+  #   scope: party_wide
+  #   spell_id: 216331
+  #
+  # Talented AoE/raid heal cooldowns — extra heal/party_wide options that
+  # the party-wide-damage rules can bind. Uncomment any the build runs.
+  # - id: holy_prism
+  #   label: "Holy Prism"
+  #   category: heal
+  #   scope: party_wide
+  #   spell_id: 114165
+  # - id: beacon_of_virtue
+  #   label: "Beacon of Virtue"
+  #   category: heal
+  #   scope: party_wide
+  #   spell_id: 200025
+  # - id: tyrs_deliverance
+  #   label: "Tyr's Deliverance"
+  #   category: heal
+  #   scope: party_wide
+  #   spell_id: 200652

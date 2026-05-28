@@ -265,10 +265,17 @@ class CalibrationDialog(QDialog):
     def _crop_pixmap(self, bbox: tuple[int, int, int, int]) -> QPixmap | None:
         h, w = self._source.shape[:2]
         x1, y1, x2, y2 = bbox
-        x1 = max(0, min(x1, w))
-        y1 = max(0, min(y1, h))
-        x2 = max(0, min(x2, w))
-        y2 = max(0, min(y2, h))
+        # Pad the display crop ~12 px on each side: the LLM's bbox tends
+        # to be tight on the name + HP region of each slot and miss the
+        # role icons / status bars at the edges, which makes the
+        # thumbnail look clipped. The saved bbox stays as the LLM
+        # returned it — only the displayed thumbnail uses the padded
+        # crop, so calibration semantics are unchanged.
+        pad = 12
+        x1 = max(0, min(x1 - pad, w))
+        y1 = max(0, min(y1 - pad, h))
+        x2 = max(0, min(x2 + pad, w))
+        y2 = max(0, min(y2 + pad, h))
         if x2 <= x1 or y2 <= y1:
             return None
         crop_bgr = self._source[y1:y2, x1:x2]

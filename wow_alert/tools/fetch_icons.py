@@ -4,8 +4,9 @@ Usage:
     python -m wow_alert.tools.fetch_icons
 
 Walks `config/classes/*/*.yaml`, collects every `spell_id` value, and
-for each one that doesn't already have `config/icons/<spell_id>.png`,
-fetches the icon and writes it.
+for each one that doesn't already have a `<spell_id>.png` in the icons
+dir (the user-data location by default; see --icons-dir), fetches the
+icon and writes it.
 
 Source order:
 
@@ -26,7 +27,7 @@ class library to add new actions.
 
 If both endpoints fail for a given spell_id, the script prints a clear
 manual-download instruction with the canonical Wowhead URL — open it
-in your browser, right-click the icon, save it to `config/icons/<id>.png`.
+in your browser, right-click the icon, save it into the icons dir as `<id>.png`.
 """
 from __future__ import annotations
 
@@ -45,6 +46,7 @@ import yaml
 
 from wow_alert.class_library import ClassActions
 from wow_alert.config import REPO_ROOT
+from wow_alert.paths import ICONS_DIR
 
 logger = logging.getLogger("fetch_icons")
 
@@ -202,7 +204,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config-dir", type=Path, default=REPO_ROOT / "config",
-        help="Path to the config root (default: %(default)s).",
+        help="Path to the config root, where class libraries are read from "
+             "(default: %(default)s).",
+    )
+    parser.add_argument(
+        "--icons-dir", type=Path, default=ICONS_DIR,
+        help="Where to write icon PNGs (default: the user-data icons dir, "
+             "%(default)s).",
     )
     parser.add_argument(
         "--force", action="store_true",
@@ -218,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    icon_dir = args.config_dir / "icons"
+    icon_dir = args.icons_dir
     icon_dir.mkdir(parents=True, exist_ok=True)
 
     spell_ids = _collect_spell_ids(args.config_dir / "classes")

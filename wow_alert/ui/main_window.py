@@ -31,8 +31,6 @@ from wow_alert.audio import PyttsxWinsoundAlertPlayer
 from wow_alert.calibration import (
     Calibration,
     CooldownIcon,
-    LocateResult,
-    calibrate_locate,
     calibrate_read,
     load_calibration,
     save_calibration,
@@ -42,7 +40,7 @@ from wow_alert.config import REPO_ROOT
 from wow_alert.cooldown_watcher import CooldownWatcher
 from wow_alert.events import Alert
 from wow_alert.icon_matcher import IconMatcher
-from wow_alert.paths import CALIBRATION_ARTIFACTS_DIR, CALIBRATION_PATH
+from wow_alert.paths import CALIBRATION_ARTIFACTS_DIR, CALIBRATION_PATH, ICONS_DIR
 from wow_alert.pipeline import PipelineWorker
 from wow_alert.ui._background_runner import BackgroundRunner
 from wow_alert.ui.calibration_dialog import CalibrationDialog
@@ -113,7 +111,6 @@ class MainWindow(QMainWindow):
         # Per-run state for the two-phase flow (frame stays valid across the
         # region-confirm dialog so pass-2/3 uses the same image pass-1 saw).
         self._calibration_frame: np.ndarray | None = None
-        self._calibration_locate: LocateResult | None = None
         # Diagnostic info from the icon matcher, keyed by cooldown_icon
         # index. Populated by _resolve_icons_and_spec, consumed by the
         # icon-labeling dialog so it can show side-by-side references and
@@ -244,11 +241,14 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_calibrate_clicked(self) -> None:
-        """Kick off Pass 1 (LLM region detection).
+        """Open the region-confirm dialog so the user can draw the
+        party-frame and cooldown-manager regions, then kick off Pass 2
+        (party-name read) against the confirmed regions.
 
-        On completion, a region-confirm dialog opens so the user can adjust
-        the bounding boxes before Pass 2/3 reads the contents. This makes
-        the system robust to LLM mis-localization on unusual aspect ratios.
+        No LLM-driven region locate: the previous Pass 1 call placed
+        regions unreliably (often top-left of an ultrawide source far
+        from the actual UI), so the user redrew them every time anyway.
+        Dropping the call saves an API call + ~5 s of latency.
         """
         if self._calibration_thread is not None:
             self.log_widget.info("calibration already in progress")
@@ -262,29 +262,35 @@ class MainWindow(QMainWindow):
             return
 
         self._calibrate_btn.setEnabled(False)
-        self._calibration_status.setText("Calibrating… (1/2: locating regions)")
-        self.log_widget.info("calibrating (pass 1: locating regions)")
         self._calibration_frame = frame
-        self._start_runner(
-            lambda: calibrate_locate(frame),
-            on_completed=self._on_locate_completed,
+        self._open_region_confirm(frame)
+
+    def _open_region_confirm(self, frame) -> None:
+        """Show the region-confirm dialog. Defaults come from the
+        previously-saved calibration (so on a re-calibrate the user
+        just confirms with minor tweaks); first-ever calibration falls
+        through to the editor's centered-rectangle default."""
+        party_region = self._derive_region_from_prior("party")
+        cooldown_region = self._derive_region_from_prior("cooldown")
+        dungeon_name = (
+            self._calibration.dungeon_name if self._calibration else None
         )
-
-    @Slot(object)
-    def _on_locate_completed(self, locate_result: LocateResult) -> None:
-        """Pass 1 done — show the region-confirm dialog, then kick off
-        Pass 2/3 against the user-confirmed regions."""
-        self._calibration_locate = locate_result
-        frame = self._calibration_frame
-        if frame is None:
-            self._abort_calibration("internal: frame missing between phases")
-            return
-
+        if party_region or cooldown_region:
+            self._calibration_status.setText("Calibrating… confirm regions")
+            self.log_widget.info(
+                "calibrating: regions pre-filled from your previous "
+                "calibration — confirm or adjust"
+            )
+        else:
+            self._calibration_status.setText("Calibrating… draw regions")
+            self.log_widget.info(
+                "calibrating: draw the party + cooldown regions"
+            )
         dialog = RegionConfirmDialog(
             image_bgr=frame,
-            party_region=locate_result.party_region,
-            cooldown_region=locate_result.cooldown_region,
-            dungeon_name=locate_result.dungeon_name,
+            party_region=party_region,
+            cooldown_region=cooldown_region,
+            dungeon_name=dungeon_name,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -293,16 +299,15 @@ class MainWindow(QMainWindow):
             return
 
         party_region, cooldown_region, dungeon_name = dialog.result_regions()
-        self._calibration_status.setText("Calibrating… (2/2: reading contents)")
-        self.log_widget.info("calibrating (pass 2/3: reading confirmed regions)")
-        prior_notes = locate_result.notes
+        self._calibration_status.setText("Calibrating… reading party + icons")
+        self.log_widget.info("calibrating: reading party names + finding icons")
         self._start_runner(
             lambda: calibrate_read(
                 frame,
                 party_region=party_region,
                 cooldown_region=cooldown_region,
                 dungeon_name=dungeon_name,
-                prior_notes=prior_notes,
+                prior_notes="",
             ),
             on_completed=self._on_read_completed,
         )
@@ -348,7 +353,7 @@ class MainWindow(QMainWindow):
                 f"{cal.player_class}/{cal.player_spec}"
             )
             return cal
-        icon_dir = REPO_ROOT / "config" / "icons"
+        icon_dir = ICONS_DIR
         dialog = IconLabelDialog(
             cal, frame, actions, icon_dir,
             diagnostics=self._last_match_diagnostics,
@@ -362,9 +367,36 @@ class MainWindow(QMainWindow):
         labeled_cal, written = dialog.apply_labels()
         self.log_widget.info(
             f"icon labels applied: {written} reference PNG(s) written to "
-            f"config/icons/"
+            f"{ICONS_DIR}"
         )
         return labeled_cal
+
+    def _derive_region_from_prior(
+        self, kind: str,
+    ) -> tuple[int, int, int, int] | None:
+        """Compute a bounding box around all party_members (or all
+        cooldown_icons) from the previously-saved calibration. Used as
+        the starting region for a re-calibrate so the user doesn't
+        have to redraw from scratch."""
+        if self._calibration is None:
+            return None
+        if kind == "party":
+            items = self._calibration.party_members
+        elif kind == "cooldown":
+            items = self._calibration.cooldown_icons
+        else:
+            return None
+        if not items:
+            return None
+        xs: list[int] = []
+        ys: list[int] = []
+        for item in items:
+            x1, y1, x2, y2 = item.bbox
+            xs.extend([x1, x2])
+            ys.extend([y1, y2])
+        # 10 px padding around the cluster so the user has a little
+        # slack when adjusting.
+        return (min(xs) - 10, min(ys) - 10, max(xs) + 10, max(ys) + 10)
 
     def _resolve_icons_and_spec(
         self, cal: Calibration, frame,
@@ -379,16 +411,43 @@ class MainWindow(QMainWindow):
         so you can inspect what the LLM bboxes captured when matching
         underperforms.
         """
-        icon_dir = REPO_ROOT / "config" / "icons"
+        icon_dir = ICONS_DIR
         matcher = IconMatcher(icon_dir)
         if len(matcher) == 0:
             self.log_widget.error(
-                "no icons in config/icons/ — cooldown tracking will be "
+                f"no icons in {icon_dir} — cooldown tracking will be "
                 "disabled. Run: python -m wow_alert.tools.fetch_icons"
             )
             return cal
 
+        # Pass 1: match against the full icon DB to figure out which
+        # class+spec the player is on.
         per_icon = self._match_with_diagnostics(cal, frame, matcher)
+        matched_ids = {ic.spell_id for ic, _ in per_icon if ic.spell_id is not None}
+        cls, spec, count = infer_class_spec(REPO_ROOT / "config", matched_ids)
+
+        # Pass 2: re-match restricted to just the detected class's
+        # spell IDs. Stops cross-class false references — e.g., paladin
+        # icons labeled in a previous session showing up as closest for
+        # a monk character's icons.
+        if cls and spec:
+            actions = load_class_actions(REPO_ROOT / "config", cls, spec)
+            allowed = {a.spell_id for a in actions}
+            restricted = IconMatcher(icon_dir, allowed_spell_ids=allowed)
+            if len(restricted) > 0:
+                per_icon = self._match_with_diagnostics(cal, frame, restricted)
+                matcher = restricted
+            cal = cal.model_copy(update={"player_class": cls, "player_spec": spec})
+            self.log_widget.info(
+                f"class auto-detect: {cls}/{spec} ({count} matches in pass 1; "
+                f"re-matched against {len(restricted)} {cls}/{spec} refs)"
+            )
+        else:
+            self.log_widget.error(
+                "could not auto-detect class+spec from icons — pick "
+                "manually in the next dialog"
+            )
+
         cal = cal.model_copy(
             update={
                 "cooldown_icons": [ic for ic, _ in per_icon],
@@ -406,18 +465,6 @@ class MainWindow(QMainWindow):
         self.log_widget.info(
             f"icon matcher: {len(matched_ids)}/{total} icons identified"
         )
-
-        cls, spec, count = infer_class_spec(REPO_ROOT / "config", matched_ids)
-        if cls and spec:
-            self.log_widget.info(
-                f"class auto-detect: {cls}/{spec} ({count} icon matches)"
-            )
-            cal = cal.model_copy(update={"player_class": cls, "player_spec": spec})
-        else:
-            self.log_widget.error(
-                "could not auto-detect class+spec from icons — pick "
-                "manually in the next dialog"
-            )
         return cal
 
     def _match_with_diagnostics(self, cal: Calibration, frame, matcher: IconMatcher):
@@ -483,7 +530,7 @@ class MainWindow(QMainWindow):
                 if crop is not None:
                     cv2.imwrite(str(artifact_dir / crop_name), crop)
                 if closest is not None:
-                    ref_src = REPO_ROOT / "config" / "icons" / f"{closest}.png"
+                    ref_src = ICONS_DIR / f"{closest}.png"
                     if ref_src.exists():
                         ref_dst = artifact_dir / f"icon_{idx:02d}_closest_{closest}.png"
                         ref_dst.write_bytes(ref_src.read_bytes())
@@ -572,7 +619,6 @@ class MainWindow(QMainWindow):
         """End-of-flow cleanup, success or not. Resets per-run state and
         re-enables the Calibrate button."""
         self._calibration_frame = None
-        self._calibration_locate = None
         if not success:
             self._calibration_status.setText(
                 self._format_calibration_status(self._calibration)

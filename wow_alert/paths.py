@@ -12,6 +12,11 @@ Two zones, deliberately separate:
   safe to delete to force regeneration:
       <USER_DATA>/wow-alert/tts_cache/        TTS-rendered phrase WAVs
       <USER_DATA>/wow-alert/calibration.yaml  LLM-derived screen layout (iter 2+)
+      <USER_DATA>/wow-alert/icons/            cooldown-matcher reference PNGs
+                                              (seeded from Wowhead, then
+                                              overwritten with the user's own
+                                              labeled crops — per-user data,
+                                              never git-tracked)
 
 On Windows, USER_DATA is `%LOCALAPPDATA%`. Resolved via `platformdirs` so
 the same code works on other OSes if/when we go cross-platform.
@@ -29,6 +34,7 @@ USER_DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False, roaming=False))
 TTS_CACHE_DIR = USER_DATA_DIR / "tts_cache"
 CALIBRATION_PATH = USER_DATA_DIR / "calibration.yaml"
 CALIBRATION_ARTIFACTS_DIR = USER_DATA_DIR / "calibration_artifacts"
+ICONS_DIR = USER_DATA_DIR / "icons"
 
 
 def ensure_user_data_dirs() -> None:
@@ -38,3 +44,4 @@ def ensure_user_data_dirs() -> None:
     """
     USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
     TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)

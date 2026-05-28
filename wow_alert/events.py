@@ -63,6 +63,9 @@ class Recommendation(RuleOutput):
     target: str          # teammate name to act on
     phrase: str          # key that AlertPlayer looks up
     message: str
+    # Optional rendered prefix played before `phrase` (e.g. the spell
+    # name). Pipeline stitches as `[phrase_prefix?, phrase, target?]`.
+    phrase_prefix: str = ""
 
 
 @dataclass(frozen=True)

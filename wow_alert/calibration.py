@@ -81,38 +81,6 @@ WOW_SPECS: dict[str, list[str]] = {
 _CROP_PADDING_FRACTION = 0.10
 
 
-_PROMPT_LOCATE = """\
-You are looking at a screenshot of World of Warcraft. Find three things
-and report them. Bounding boxes only for the UI regions — no name reading
-yet, that comes in a separate pass.
-
-1. Party / raid frames — a column or row of slots showing teammate names
-   above HP bars. Default position is top-left; addons (ElvUI etc.) can
-   relocate them. Return one bounding box that encompasses ALL the party
-   slots together.
-
-2. Cooldown manager — a row or grid of small spell icons that grey out
-   when used (often a WeakAura). Return one bounding box that encompasses
-   the full set of icons.
-
-3. Dungeon / zone name — usually a few words of large text near the top
-   of the screen (minimap area on the right, or near the player frame).
-   Read it directly from this image if legible; set null if you can't
-   read it confidently. Do not guess.
-
-Bounding boxes are [x1, y1, x2, y2] in pixels, top-left origin, with
-x2 > x1 and y2 > y1. Set any field you can't find to null.
-
-Respond with ONLY this JSON object, no prose, no code fences:
-{
-  "party_region": [x1, y1, x2, y2] | null,
-  "cooldown_region": [x1, y1, x2, y2] | null,
-  "dungeon_name": "..." | null,
-  "notes": "any caveats"
-}
-"""
-
-
 _PROMPT_READ_PARTY = """\
 This image is a tight crop of a World of Warcraft party/raid frame. Read
 each visible teammate slot.
@@ -179,7 +147,7 @@ class CooldownIcon(BaseModel):
     `bbox` comes from the LLM's region read. `spell_id` is populated by
     the IconMatcher after calibration finishes — None means the matcher
     couldn't identify which spell this icon represents (no high-enough
-    score against any reference PNG in `config/icons/`).
+    score against any reference PNG in the icons dir).
     """
 
     bbox: tuple[int, int, int, int]
@@ -257,17 +225,6 @@ class CalibrationError(RuntimeError):
     unparseable response, etc.). The message is user-facing."""
 
 
-class LocateResult(BaseModel):
-    """Pass 1 output. Regions are in source-frame coords (or None if the LLM
-    couldn't locate the element). `notes` carries any caveats the LLM
-    reported."""
-
-    party_region: tuple[int, int, int, int] | None = None
-    cooldown_region: tuple[int, int, int, int] | None = None
-    dungeon_name: str | None = None
-    notes: str = ""
-
-
 def _make_client() -> Any:
     if os.environ.get("ANTHROPIC_API_KEY") is None:
         raise CalibrationError(
@@ -283,33 +240,6 @@ def _make_client() -> Any:
     return anthropic.Anthropic()
 
 
-def calibrate_locate(image_bgr: np.ndarray) -> LocateResult:
-    """Pass 1: find rough regions + dungeon name in a full screenshot.
-
-    Returns a `LocateResult` whose region fields may be None when the LLM
-    couldn't locate the element. The caller is expected to show these to
-    the user for confirmation/adjustment before invoking `calibrate_read`.
-    """
-    client = _make_client()
-    parsed = _call_pass(client, image_bgr, _PROMPT_LOCATE)
-    scale = parsed.get("_encoding_scale", 1.0)
-    party_region = _resolve_bbox(parsed.get("party_region"), scale)
-    cooldown_region = _resolve_bbox(parsed.get("cooldown_region"), scale)
-    dungeon_raw = parsed.get("dungeon_name")
-    dungeon_name = dungeon_raw.strip() if isinstance(dungeon_raw, str) else None
-    notes = parsed.get("notes") or ""
-    logger.info(
-        "calibrate_locate: party=%s cooldown=%s dungeon=%r",
-        party_region, cooldown_region, dungeon_name,
-    )
-    return LocateResult(
-        party_region=party_region,
-        cooldown_region=cooldown_region,
-        dungeon_name=dungeon_name,
-        notes=notes,
-    )
-
-
 def calibrate_read(
     image_bgr: np.ndarray,
     party_region: tuple[int, int, int, int] | None,
@@ -317,16 +247,15 @@ def calibrate_read(
     dungeon_name: str | None = None,
     prior_notes: str = "",
 ) -> Calibration:
-    """Passes 2 and 3: crop to user-confirmed regions and read contents.
+    """Read the contents of the user-confirmed regions.
 
-    `party_region` and `cooldown_region` must be in source-frame coords (the
-    coords `image_bgr` uses). They're typically the user-adjusted output of
-    `calibrate_locate`, but can also come from elsewhere (e.g., a re-run
-    with hand-typed bboxes). Either may be None — that region is skipped
-    and the corresponding output is empty.
+    Pass 2: LLM transcribes party-frame names + roles from a crop of
+    the party region. Pass 3 (icons): OpenCV contour detection finds
+    individual cooldown-icon bboxes inside the cooldown region.
 
-    `dungeon_name` and `prior_notes` flow through unchanged; pass through
-    what the user confirmed in the region-confirmation step.
+    `party_region` and `cooldown_region` are in source-frame coords;
+    either may be None to skip that pass. `dungeon_name` and
+    `prior_notes` flow through unchanged.
     """
     client = _make_client()
     notes: list[str] = []
@@ -386,23 +315,6 @@ def calibrate_read(
         len(cal.party_members), len(cal.roster()), len(cal.cooldown_icons),
     )
     return cal
-
-
-def calibrate(image_bgr: np.ndarray) -> Calibration:
-    """Convenience: run locate + read without an intermediate confirmation.
-
-    Useful for tests and headless callers. Production UI invokes
-    calibrate_locate, shows a region-confirmation dialog, then
-    calibrate_read against the confirmed regions.
-    """
-    locate = calibrate_locate(image_bgr)
-    return calibrate_read(
-        image_bgr,
-        party_region=locate.party_region,
-        cooldown_region=locate.cooldown_region,
-        dungeon_name=locate.dungeon_name,
-        prior_notes=locate.notes,
-    )
 
 
 def save_calibration(cal: Calibration, path: Path) -> None:

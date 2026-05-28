@@ -5,6 +5,21 @@ self-contained: an external assistant with no source-code access can use
 this document to produce correct content files for a new dungeon or a new
 class+spec.
 
+> **⚠️ Spell IDs must be verified, not guessed.** Several fields take
+> numeric WoW spell IDs (`spell_id` on class actions). LLMs frequently
+> misremember these — a wrong ID silently points the icon matcher at the
+> wrong art. If you generate YAML from this doc, treat every `spell_id`
+> as a placeholder to confirm on Wowhead (`https://www.wowhead.com/spell=<id>`
+> redirects to the named spell) before shipping it. When unsure, leave a
+> `# TODO verify` comment next to the ID.
+
+> **Required fields (a missing one fails YAML load):**
+> - Class action: `id`, `label`, `category`, `scope`, `spell_id`
+> - Spell: `id`, `name`
+> - Rule priority: `say`
+> - `on_cast`: `spell_id`
+> Everything else is optional with a documented default.
+
 ---
 
 ## 1. What the app does (one paragraph)
@@ -72,6 +87,27 @@ of a specific spell name. This lets one rule work for every class — what
 "single-target defensive" means is BoP for paladin, Cocoon for monk,
 Ironbark for druid.
 
+### What to include (and what to leave out)
+
+List only **reactive cooldowns** — abilities you press in response to an
+incoming threat. These map cleanly to the six categories:
+
+- **Defensives** — externals (BoP, Sac, Cocoon, Ironbark), self-CDs
+  (Divine Shield, Dampen Harm), party/raid walls (Aura Mastery,
+  Barrier, Anti-Magic Zone).
+- **Healing cooldowns** — emergency or throughput CDs that help the
+  group survive a hit (Lay on Hands, Revival, Tranquility, Divine Hymn,
+  Avenging Wrath for holy paladin). NOT filler heals.
+- **Dispels, interrupts, CC, stops** — Cleanse, Kick, Hammer of Justice,
+  knockbacks.
+
+**Do NOT list filler / rotation / throughput-builder spells** — Holy
+Light, Smite, Crusader Strike, Vivify, Renewing Mist, etc. The rule
+engine never binds them (there's no "rotation" category), so they'd
+just be dead entries. A rough test: if it has a meaningful cooldown and
+you'd press it *because something bad is happening*, include it; if it's
+part of your normal moment-to-moment casting, leave it out.
+
 ### File: `config/classes/<class>/<spec>.yaml`
 
 ```yaml
@@ -107,6 +143,24 @@ time.
 | `interrupt` | Interrupts an enemy cast | Rebuke, Counterspell, Kick, Mind Freeze |
 | `cc` | Crowd-controls an enemy | Hammer of Justice, Hex, Polymorph |
 | `stop` | Stops an effect via knockback / displacement / silence | Shockwave, Typhoon, Silence |
+| `utility` | Helps an ally but does NOT mitigate damage — keep these out of `defensive` so tank/raid rules don't bind them | Blessing of Freedom, Tiger's Lust (snare/root breaks) |
+
+One ability can serve several roles — give `category` a list and a rule
+matches if its filter is among them. Revival, for instance, is both a
+party heal and a mass dispel:
+
+```yaml
+  - id: revival
+    label: "Revival"
+    category: [heal, dispel]   # binds heal/party_wide AND dispel/party_wide rules
+    scope: party_wide
+    tags: [magic, poison, disease, emergency_only]
+    spell_id: 115310
+```
+
+Order matters: list a cheaper, more targeted option earlier so it binds
+first. Detox (single-target dispel) sits before Revival so a single-target
+dispel rule picks Detox, not the raid cooldown.
 
 **`scope`** — Who the action affects:
 
@@ -132,10 +186,12 @@ time.
 
 Invent new tags freely — the engine treats them as opaque strings.
 
-**`spell_id`** — The canonical WoW spell ID for this ability. Acts as
-the join key to the icon database and the cooldown availability dict.
-You can look spell IDs up on Wowhead — the URL `https://www.wowhead.com/spell=1022`
-is for Blessing of Protection, so `spell_id: 1022`.
+**`spell_id`** (REQUIRED) — The canonical WoW spell ID for this ability.
+Acts as the join key to the icon database and the cooldown availability
+dict. Look it up on Wowhead — the URL `https://www.wowhead.com/spell=1022`
+redirects to Blessing of Protection, so `spell_id: 1022`. A missing
+`spell_id` makes the whole class-library file fail to load; a *wrong*
+one silently mis-identifies the icon. Verify each one.
 
 ### The cooldown manager
 
@@ -424,6 +480,7 @@ no condition fields is the catch-all.
 | `say` | output | Templated message string (always required) |
 | `do` | output | Templated action id; when set, output is a Recommendation |
 | `phrase` | output | Templated audio override; only meaningful with `do` |
+| `phrase_prefix` | output | Templated audio played BEFORE `phrase`. Defaults to the spell name; set `""` to disable. Only meaningful with `do` |
 
 ### Conditions
 
@@ -481,8 +538,8 @@ the bare action label without one).
 
 ### Templating
 
-These tokens are replaced in `say`, `do`, and `phrase`. Whitespace is
-collapsed and trimmed after substitution.
+These tokens are replaced in `say`, `do`, `phrase`, and `phrase_prefix`.
+Whitespace is collapsed and trimmed after substitution.
 
 | Token | Replacement |
 |---|---|
@@ -497,13 +554,28 @@ collapsed and trimmed after substitution.
 | `do:` set? | Output | Audio | Log message |
 |---|---|---|---|
 | No  | `Alert` | spell's `phrase` (from spells entry) | rendered `say` |
-| Yes | `Recommendation` | rendered `phrase` if set, else action.label; stitched with target name | rendered `say` |
+| Yes | `Recommendation` | stitched: `[prefix, phrase, target]` (see below) | rendered `say` |
 
-When the engine emits a `Recommendation` with a target, audio plays as a
-stitched clip: `<phrase>.wav` + `<target_name>.wav` concatenated. Both
-clips must exist in the prerender cache (they're generated at
-calibration time from the class library labels, rule literal phrases,
-and roster names).
+For a `Recommendation`, audio is stitched from up to three prerendered
+WAV clips played in sequence:
+
+1. **prefix** — `phrase_prefix` rendered, or the spell name by default
+   (set `phrase_prefix: ""` to drop it).
+2. **phrase** — the rendered `phrase` if set, else the bound action's
+   `label`.
+3. **target** — the canonical target name, if the cast has one.
+
+So a default Recommendation for Arcane Salvo binding Devotion Aura on
+Captain Garrick plays `"Arcane Salvo"` + `"Devotion Aura"` +
+`"Captain Garrick"`. Giving the spell name first is deliberate: it lets
+the player decide whether the incoming cast actually warrants spending
+the cooldown.
+
+Every clip must exist in the prerender cache. The cache is populated at
+calibration time from: spell default `phrase` strings, **spell names**
+(so the default prefix works), class-action `label` strings, literal
+rule `phrase`/`phrase_prefix` strings, and roster names. Templated
+phrases compose from those cached parts at playback.
 
 ### Fallback
 
@@ -551,23 +623,27 @@ Loaded rules (abbreviated):
       do: "{action.id}"
 ```
 
-Loaded class library (paladin/holy, abbreviated):
+Loaded class library (paladin/holy, abbreviated — note every action
+still carries a required `spell_id`):
 
 ```yaml
 actions:
-  - id: bop                       # tagged aggro_dropping
+  - id: blessing_of_protection    # tagged aggro_dropping
     label: BOP
     category: defensive
     scope: single_target
     tags: [aggro_dropping]
+    spell_id: 1022
   - id: blessing_of_sacrifice     # untagged
     label: Sac
     category: defensive
     scope: single_target
+    spell_id: 6940
   - id: devotion_aura
     label: Devotion Aura
     category: defensive
     scope: party_wide
+    spell_id: 465
 ```
 
 Engine flow:
@@ -582,28 +658,32 @@ Engine flow:
      category+scope, has no excluded tag, cooldown OK → **bind action
      = blessing_of_sacrifice**.
 3. **Build output**: `do` is set → `Recommendation`.
-   - `say` renders `"Sac Captain Garrick"`.
+   - `say` renders `"Sac Captain Garrick"` (the log line).
    - `phrase` defaults to `action.label = "Sac"`.
+   - `phrase_prefix` defaults to the spell name `"Arcane Salvo"`.
    - `target = "Captain Garrick"`.
-4. **Audio**: `Sac.wav` + `Captain_Garrick.wav` stitched and played.
+4. **Audio**: `Arcane Salvo.wav` + `Sac.wav` + `Captain_Garrick.wav`
+   stitched and played — context, then action, then who.
 
 If Sac were on cooldown, Rule A priority 1 would fail (no untagged
 defensive available), and priority 2 (`party_wide` defensive) would
-match Devotion Aura. If both were down, priority 3 (catch-all `say`)
-would fire as an Alert reading `"Tank Buster on Captain Garrick"` with
-the spell's default audio phrase.
+match Devotion Aura — audio `"Arcane Salvo Devotion Aura"`. If both
+were down, priority 3 (catch-all `say`) would fire as an Alert reading
+`"Tank Buster on Captain Garrick"` with the spell's default audio
+phrase (Alerts don't get the spell-name prefix — only Recommendations
+do).
 
 If the target were Meredy (dps) instead, Rule A's `target_role: tank`
 filter would fail, Rule B would fire instead, BoP would match (no tag
-exclusion in Rule B), and the result would be `"BOP Meredy"`.
+exclusion in Rule B), and the audio would be `"Arcane Salvo BOP Meredy"`.
 
 If no target were detected, Rule A's `target_role: tank` filter would
 fail (role lookup on null target). Rule B's first priority requires
 `target_present: true` and is skipped. Rule B's second priority asks
 for a party-wide defensive with `target_present: false` — Devotion Aura
-matches and a Recommendation fires speaking `"Devotion Aura"`. If
-party-wide defensives are also on cooldown, the engine falls through to
-the spell-default Alert (`"DEFENSIVE ARCANE"`).
+matches and a Recommendation fires speaking `"Arcane Salvo Devotion
+Aura"`. If party-wide defensives are also on cooldown, the engine falls
+through to the spell-default Alert (`"DEFENSIVE ARCANE"`).
 
 ---
 
@@ -752,6 +832,27 @@ alias.
 **Don't rely on `cast_by` / `school` / `interruptible` / `notes`.**
 These are descriptive only — the engine doesn't read them.
 
+**`category` and `scope` are validated against fixed vocabularies.**
+`category` must be one of `defensive`/`heal`/`dispel`/`interrupt`/`cc`/`stop`;
+`scope` must be one of `self`/`single_target`/`party_wide`/`raid_wide`.
+An out-of-vocab value (e.g. `category: offensive`) raises and the whole
+class-library file fails to load. There is no `offensive` category —
+the app only models *reactive* abilities, not damage rotations.
+
+**Misspelled optional field names are silently ignored.** The parser
+ignores unknown keys rather than erroring. So `tag: [magic]` (should be
+`tags:`) leaves the action with no tags, and a rule's `has_tag: magic`
+then never binds it — with no error anywhere. Double-check field names
+against the schema tables. (Misspelling a *required* key like `scope`
+does fail loudly, because the required field ends up missing.)
+
+**Tags must agree across files.** `has_tag` / `lacks_tag` in a dungeon
+rule are matched literally against the `tags` you authored on class
+actions. If you generate the dungeon file and the class-library file in
+separate LLM sessions, keep the tag spelling identical — a rule asking
+`has_tag: magic` won't bind an action tagged `magic_dispel`. Stick to
+the tag vocabulary in §3's table unless you have a reason not to.
+
 ---
 
 ## 9. Complete worked example: Spellguard Magus / Arcane Salvo
@@ -832,15 +933,18 @@ then to the spell's generic warning.
 
 ### Resulting behavior
 
+Audio shown as the stitched sequence actually spoken (spell-name prefix
+is the default for Recommendations).
+
 | Cast | Outcome |
 |---|---|
-| Arcane Salvo on tank, Sac up | Recommendation: speaks `"Sac <tank>"` |
-| Arcane Salvo on tank, Sac on CD, Devo Aura up | Recommendation: speaks `"Devotion Aura"` |
-| Arcane Salvo on tank, all defensives on CD | Alert: speaks `"DEFENSIVE ARCANE"`, log says `"Tank Buster on <tank>"` |
-| Arcane Salvo on DPS, BoP up | Recommendation: speaks `"BOP <dps>"` |
-| Arcane Salvo with no target, Devo Aura up | Recommendation: speaks `"Devotion Aura"` |
-| Arcane Salvo with no target, Devo on CD, Aura Mastery up | Recommendation: speaks `"Aura Mastery"` |
-| Arcane Salvo with no target, all party-wide defensives on CD | Alert: speaks `"DEFENSIVE ARCANE"` |
+| Arcane Salvo on tank, Sac up | Recommendation: `"Arcane Salvo Sac <tank>"` |
+| Arcane Salvo on tank, Sac on CD, Devo Aura up | Recommendation: `"Arcane Salvo Devotion Aura"` |
+| Arcane Salvo on tank, all defensives on CD | Alert: `"DEFENSIVE ARCANE"`, log says `"Tank Buster on <tank>"` |
+| Arcane Salvo on DPS, BoP up | Recommendation: `"Arcane Salvo BOP <dps>"` |
+| Arcane Salvo with no target, Devo Aura up | Recommendation: `"Arcane Salvo Devotion Aura"` |
+| Arcane Salvo with no target, Devo on CD, Aura Mastery up | Recommendation: `"Arcane Salvo Aura Mastery"` |
+| Arcane Salvo with no target, all party-wide defensives on CD | Alert: `"DEFENSIVE ARCANE"` |
 
 ---
 

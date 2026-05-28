@@ -28,3 +28,6 @@ config/tts_cache/
 
 # Secrets
 .env
+
+# Per-user cooldown-matcher reference icons live in the user-data dir
+config/icons/

@@ -115,6 +115,27 @@ def test_matched_new_runs_full_downstream():
     assert "registered: Polymorph" in texts
 
 
+def test_empty_phrase_alert_is_silent_but_emitted():
+    # A spell with an empty phrase (e.g. an interruptible filler a healer
+    # can't kick) is recognized and emitted as an alert — for the log/UI —
+    # but plays no audio.
+    deps, _detector, _ocr, _deduper, rule_engine, alert_player = make_deps()
+    rule_engine.decide.return_value = Alert(
+        severity=Severity.DANGER, phrase="", message="Spirit Bolt on John",
+    )
+    worker = PipelineWorker(deps)
+    alerts: list[Alert] = []
+    worker.alert.connect(alerts.append)
+
+    frame = make_frame()
+    update = deps.tracker.update([detection_at_origin()])
+    worker._process_new_track(frame, update.new[0])
+
+    alert_player.play.assert_not_called()       # silent
+    assert len(alerts) == 1                       # but still emitted
+    assert alerts[0].message == "Spirit Bolt on John"
+
+
 def test_matched_duplicate_skips_rule_engine():
     outcome = DedupeOutcome(
         disposition=Disposition.MATCHED_DUPLICATE,

@@ -1,0 +1,749 @@
+# Magisters' Terrace spell database. Loaded when calibration identifies
+# this dungeon (slug: magisters_terrace).
+#
+# Authored from the method.gg ability tracker (Midnight 12.0.5):
+#   https://www.method.gg/guides/dungeons/magisters-terrace/ability-tracker
+#
+# Spell schema (authoritative: wow_alert/events.py:Spell):
+#   id / name / aliases / severity / phrase / duration / cast_by /
+#   school / interruptible / notes
+#
+# Dispel note: the tracker tags several effects "via Freedom" (a snare/
+# root Blessing of Freedom or Tiger's Lust clears) and "via Stoneform/
+# Shadowmeld" (racial self-cleanses). None are healer dispels, so no
+# dispel/snare rules are authored here. Pure-filler casts with no tracker
+# detail (Dimensional Shred) are omitted to avoid noise. "Ethereal
+# Shackles" is cast by both a trash mob and a boss; since the cast bar
+# can't distinguish caster, it's a single entry.
+
+dungeon: "Magisters' Terrace"
+
+spells:
+  # ============================ TRASH ============================
+
+  # ---- Arcane Sentry / Arcanotron Custos (shared cast) ----
+  - id: mt_ethereal_shackles
+    name: "Ethereal Shackles"
+    aliases: ["Ethereal Shackles", "Ethereai Shackles", "Ethereal Shackies"]
+    severity: danger
+    phrase: SHACKLES
+    cast_by: [mob, boss]
+    school: arcane
+    interruptible: false
+    notes: "Arcane Sentry single-target tank shackle; Arcanotron Custos casts a party-wide version. Roots the target — Freedom/Tiger's Lust clears it."
+
+  # ---- Arcane Sentry ----
+  - id: mt_arcane_beam
+    name: "Arcane Beam"
+    aliases: ["Arcane Beam", "Arcane Bearn"]
+    severity: info
+    phrase: DODGE BEAM
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Arcane Sentry avoidable ground beam."
+
+  - id: mt_crowd_dispersal
+    name: "Crowd Dispersal"
+    aliases: ["Crowd Dispersal", "Crowd Dispersai"]
+    severity: danger
+    phrase: DEFENSIVE DISPERSAL
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Arcane Sentry group-wide damage."
+
+  # ---- Arcane Magister ----
+  - id: mt_arcane_bolt
+    name: "Arcane Bolt"
+    aliases: ["Arcane Bolt", "Arcane Boit", "Arcane Boll"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: arcane
+    interruptible: true
+    notes: "Arcane Magister filler cast. Interrupt."
+
+  - id: mt_polymorph
+    name: "Polymorph"
+    aliases: ["Polymorph", "Polymorpn", "Poiymorph"]
+    severity: danger
+    phrase: KICK POLYMORPH
+    cast_by: mob
+    school: arcane
+    interruptible: true
+    notes: "Arcane Magister. Interrupt before it lands. Important."
+
+  # ---- Sunblade Enforcer ----
+  - id: mt_arcane_blade
+    name: "Arcane Blade"
+    aliases: ["Arcane Blade", "Arcane Biade", "Arcane Blad3"]
+    severity: info
+    phrase: ENFORCER EMPOWERED
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Sunblade Enforcer self-buff that increases tank damage taken."
+
+  - id: mt_charge
+    name: "Charge"
+    aliases: ["Charge", "Cnarge", "Charg3"]
+    severity: danger
+    phrase: DODGE CHARGE
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Sunblade Enforcer rush at a target."
+
+  # ---- Lightward Healer ----
+  - id: mt_holy_fire
+    name: "Holy Fire"
+    aliases: ["Holy Fire", "Holy Flre", "Hoiy Fire"]
+    severity: danger
+    phrase: HOLY FIRE
+    cast_by: mob
+    school: holy
+    interruptible: false
+    notes: "Lightward Healer single-target damage debuff."
+
+  - id: mt_power_word_shield
+    name: "Power Word: Shield"
+    aliases: ["Power Word Shield", "Power Word: Shield", "Power Word Shieid"]
+    severity: info
+    phrase: ENEMY SHIELDED
+    cast_by: mob
+    school: holy
+    interruptible: false
+    notes: "Lightward Healer self-shield buff."
+
+  # ---- Animated Codex ----
+  - id: mt_arcane_volley
+    name: "Arcane Volley"
+    aliases: ["Arcane Volley", "Arcane Voiley", "Arcane Voliey"]
+    severity: danger
+    phrase: DEFENSIVE VOLLEY
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Animated Codex group-wide damage. Important."
+
+  # ---- Blazing Pyromancer ----
+  - id: mt_ignition
+    name: "Ignition"
+    aliases: ["Ignition", "Ignltion", "Igniti0n"]
+    severity: danger
+    phrase: DEFENSIVE IGNITION
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Blazing Pyromancer group-wide damage plus self-enrage."
+
+  - id: mt_pyroblast
+    name: "Pyroblast"
+    aliases: ["Pyroblast", "Pyrobiast", "Pyroblast"]
+    severity: danger
+    phrase: KICK PYROBLAST
+    cast_by: mob
+    school: fire
+    interruptible: true
+    notes: "Blazing Pyromancer. Interrupt. Important."
+
+  - id: mt_flamestrike
+    name: "Flamestrike"
+    aliases: ["Flamestrike", "Flamestrlke", "Fiamestrike"]
+    severity: info
+    phrase: DODGE FLAMESTRIKE
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Blazing Pyromancer avoidable ground effect."
+
+  # ---- Spellwoven Familiar ----
+  - id: mt_blink
+    name: "Blink"
+    aliases: ["Blink", "Biink", "Bllnk"]
+    severity: danger
+    phrase: DEFENSIVE BLINK
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Spellwoven Familiar group-wide damage. Important."
+
+  # ---- Brightscale Wyrm ----
+  - id: mt_energy_release
+    name: "Energy Release"
+    aliases: ["Energy Release", "Energy Reiease", "Energy Releas3"]
+    severity: danger
+    phrase: DEFENSIVE ENERGY
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Brightscale Wyrm group-wide damage; non-physical debuff."
+
+  # ---- Runed Spellbreaker ----
+  - id: mt_runic_glaive
+    name: "Runic Glaive"
+    aliases: ["Runic Glaive", "Runic Giaive", "Runlc Glaive"]
+    severity: danger
+    phrase: DEFENSIVE GLAIVE
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Runed Spellbreaker group-wide damage; non-physical debuff. Important."
+
+  - id: mt_shield_slam
+    name: "Shield Slam"
+    aliases: ["Shield Slam", "Shieid Slam", "Shield Siam"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Runed Spellbreaker frontal cone."
+
+  # ---- Shadowrift Voidcaller ----
+  - id: mt_call_of_the_void
+    name: "Call of the Void"
+    aliases: ["Call of the Void", "Call of the Vold", "Cail of the Void"]
+    severity: info
+    phrase: ADDS INCOMING
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Shadowrift Voidcaller summons adds."
+
+  - id: mt_consuming_shadows
+    name: "Consuming Shadows"
+    aliases: ["Consuming Shadows", "Consumlng Shadows", "Consuming Shad0ws"]
+    severity: danger
+    phrase: LOS SHADOWS
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Shadowrift Voidcaller group-wide damage; break line of sight to avoid. Important."
+
+  # ---- Unstable Voidling ----
+  - id: mt_void_eruption
+    name: "Void Eruption"
+    aliases: ["Void Eruption", "Vold Eruption", "Void Erupti0n"]
+    severity: danger
+    phrase: DEFENSIVE ERUPTION
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Unstable Voidling group-wide damage."
+
+  # ---- Devouring Tyrant ----
+  - id: mt_devouring_strike
+    name: "Devouring Strike"
+    aliases: ["Devouring Strike", "Devourlng Strike", "Devouring Strlke"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Devouring Tyrant tank hit; non-physical debuff."
+
+  - id: mt_void_bomb
+    name: "Void Bomb"
+    aliases: ["Void Bomb", "Vold Bomb", "Void Bornb"]
+    severity: info
+    phrase: DODGE VOID BOMB
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Devouring Tyrant avoidable ground; non-physical debuff."
+
+  # ---- Voidling ----
+  - id: mt_void_gash
+    name: "Void Gash"
+    aliases: ["Void Gash", "Vold Gash", "Void Gasn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Voidling tank hit with a self-buff."
+
+  # ---- Dreaded Voidwalker ----
+  - id: mt_shadow_bolt
+    name: "Shadow Bolt"
+    aliases: ["Shadow Bolt", "Shadow Boit", "Shad0w Bolt"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Dreaded Voidwalker filler cast. Interrupt."
+
+  # ---- Void Terror ----
+  - id: mt_consuming_void
+    name: "Consuming Void"
+    aliases: ["Consuming Void", "Consumlng Void", "Consuming Vold"]
+    severity: danger
+    phrase: CONSUMING VOID
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Void Terror debuff."
+
+  - id: mt_terror_wave
+    name: "Terror Wave"
+    aliases: ["Terror Wave", "Terror Wav3", "Terr0r Wave"]
+    severity: danger
+    phrase: KICK TERROR WAVE
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Void Terror. Interrupt; break line of sight. Important."
+
+  # ========================= ARCANOTRON CUSTOS =========================
+  - id: mt_repulsing_slam
+    name: "Repulsing Slam"
+    aliases: ["Repulsing Slam", "Repuising Slam", "Repulsing Siam"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Arcanotron Custos tank hit with a knock-up."
+
+  - id: mt_arcane_expulsion
+    name: "Arcane Expulsion"
+    aliases: ["Arcane Expulsion", "Arcane Expuision", "Arcane Expulsi0n"]
+    severity: danger
+    phrase: DEFENSIVE EXPULSION
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Arcanotron Custos party damage; avoidable ground with knock-up."
+
+  - id: mt_refueling_protocol
+    name: "Refueling Protocol"
+    aliases: ["Refueling Protocol", "Refueling Protocoi", "Refuellng Protocol"]
+    severity: danger
+    phrase: DEFENSIVE REFUEL
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Arcanotron Custos party damage plus self-buff."
+
+  - id: mt_unstable_energy
+    name: "Unstable Energy"
+    aliases: ["Unstable Energy", "Unstabie Energy", "Unstable Energv"]
+    severity: info
+    phrase: DODGE ENERGY
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Arcanotron Custos avoidable ground; non-physical debuff."
+
+  # ========================= SERANEL SUNLASH =========================
+  - id: mt_runic_mark
+    name: "Runic Mark"
+    aliases: ["Runic Mark", "Runlc Mark", "Runic Mark"]
+    severity: danger
+    phrase: DEFENSIVE RUNIC MARK
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Seranel Sunlash party damage; avoidable ground; non-physical debuff."
+
+  - id: mt_suppression_zone
+    name: "Suppression Zone"
+    aliases: ["Suppression Zone", "Suppresslon Zone", "Suppression Z0ne"]
+    severity: info
+    phrase: DODGE SUPPRESSION
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Seranel Sunlash avoidable ground zone."
+
+  - id: mt_null_reaction
+    name: "Null Reaction"
+    aliases: ["Null Reaction", "Nuli Reaction", "Null Reacti0n"]
+    severity: danger
+    phrase: DEFENSIVE NULL
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Seranel Sunlash party damage; avoidable ground; CC; non-physical debuff."
+
+  - id: mt_hastening_ward
+    name: "Hastening Ward"
+    aliases: ["Hastening Ward", "Hastenlng Ward", "Hastening Werd"]
+    severity: danger
+    phrase: TANK DAMAGE UP
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Seranel Sunlash self-buff that increases tank damage taken."
+
+  - id: mt_wave_of_silence
+    name: "Wave of Silence"
+    aliases: ["Wave of Silence", "Wave of Siience", "Wav3 of Silence"]
+    severity: danger
+    phrase: DEFENSIVE SILENCE
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Seranel Sunlash party damage; non-physical debuff (silence)."
+
+  # ============================== GEMELLUS ==============================
+  - id: mt_triplicate
+    name: "Triplicate"
+    aliases: ["Triplicate", "Triplicat3", "Tripiicate"]
+    severity: info
+    phrase: KILL CLONES
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Gemellus spawns additional copies."
+
+  - id: mt_cosmic_sting
+    name: "Cosmic Sting"
+    aliases: ["Cosmic Sting", "Cosmlc Sting", "Cosmic Stlng"]
+    severity: danger
+    phrase: DEFENSIVE STING
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Gemellus party damage; avoidable ground."
+
+  - id: mt_neural_link
+    name: "Neural Link"
+    aliases: ["Neural Link", "Neurai Link", "Neural Llnk"]
+    severity: info
+    phrase: NEURAL LINK
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Gemellus self-buff; non-physical debuff link."
+
+  - id: mt_astral_grasp
+    name: "Astral Grasp"
+    aliases: ["Astral Grasp", "Astrai Grasp", "Astral Grasp"]
+    severity: danger
+    phrase: DEFENSIVE GRASP
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Gemellus party damage; avoidable ground; CC."
+
+  # ============================= DEGENTRIUS =============================
+  - id: mt_entropy_blast
+    name: "Entropy Blast"
+    aliases: ["Entropy Blast", "Entropy Biast", "Entr0py Blast"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Degentrius tank hit."
+
+  - id: mt_void_torrent
+    name: "Void Torrent"
+    aliases: ["Void Torrent", "Vold Torrent", "Void Torrenl"]
+    severity: info
+    phrase: DODGE TORRENT
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Degentrius avoidable ground; CC."
+
+  - id: mt_hulking_fragment
+    name: "Hulking Fragment"
+    aliases: ["Hulking Fragment", "Hulklng Fragment", "Hulking Fragmenl"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Degentrius tank hit with a debuff plus avoidable ground."
+
+  - id: mt_devouring_entropy
+    name: "Devouring Entropy"
+    aliases: ["Devouring Entropy", "Devourlng Entropy", "Devouring Entr0py"]
+    severity: danger
+    phrase: DEFENSIVE ENTROPY
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Degentrius party damage; non-physical debuff; CC. Freedom clears the root component."
+
+  - id: mt_unstable_void_essence
+    name: "Unstable Void Essence"
+    aliases: ["Unstable Void Essence", "Unstabie Void Essence", "Unstable Vold Essence"]
+    severity: danger
+    phrase: DEFENSIVE VOID ESSENCE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Degentrius party damage; non-physical debuff."
+
+# ============================== RULES ==============================
+# Class-agnostic: each priority binds whatever the calibrated class
+# library offers; if nothing matches, the engine falls through to the
+# spell's default phrase.
+#
+# Patterns:
+#   interrupt      category: interrupt → kick the caster
+#   tank-external  single_target defensive, lacks_tag aggro_dropping
+#                  (Sac / Cocoon, not BoP — BoP drops threat)
+#   party-wide     party_wide defensive → party_wide heal → spell default
+rules:
+  # ---------------- Interrupts ----------------
+  - on_cast: { spell_id: mt_arcane_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_polymorph }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_pyroblast }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_shadow_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_terror_wave }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Tank busters (boss) ----------------
+  # Mob-cast tank hits (Devouring Strike, Void Gash, the Arcane Sentry
+  # Ethereal Shackles) are left as plain alerts — externals are saved
+  # for boss hits.
+  - on_cast: { spell_id: mt_repulsing_slam }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_hastening_ward }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_entropy_blast }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_hulking_fragment }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Party-wide damage ----------------
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: mt_crowd_dispersal }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_arcane_volley }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_ignition }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_blink }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_energy_release }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_runic_glaive }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_consuming_shadows }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_void_eruption }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_arcane_expulsion }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_refueling_protocol }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_runic_mark }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_null_reaction }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_wave_of_silence }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_cosmic_sting }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_astral_grasp }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_devouring_entropy }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: mt_unstable_void_essence }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

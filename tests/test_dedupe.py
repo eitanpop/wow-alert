@@ -92,12 +92,24 @@ class TestMatchedPath:
         assert outcome.ttl_s == 3.0  # event duration since DB is null
 
     def test_matched_ttl_capped(self):
+        # DB duration is author-controlled, so it's clamped (not discarded).
         clock = FakeClock()
         sdb = db(Spell(id="poly", name="Polymorph",
                        severity=Severity.DANGER, duration=120.0))
         d = CastDeduper(clock=clock, max_matched_ttl_s=30.0)
         outcome = process(d, sdb, evt("Polymorph", "John"))
         assert outcome.ttl_s == 30.0
+
+    def test_matched_implausible_ocr_duration_uses_default(self):
+        # DB has no duration; OCR misread the cast bar as 25s for a ~2.5s
+        # cast. An over-cap OCR value is discarded (default), NOT clamped to
+        # the cap — otherwise one misread mutes real recasts for the whole
+        # cap window. Regression for the "Shadow Bolt (25.0s)" log case.
+        clock = FakeClock()
+        sdb = db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER))
+        d = CastDeduper(clock=clock, default_ttl_s=5.0, max_matched_ttl_s=10.0)
+        outcome = process(d, sdb, evt("Polymorph", "John", duration=25.0))
+        assert outcome.ttl_s == 5.0
 
 
 class TestUnmatchedPath:
@@ -127,13 +139,15 @@ class TestUnmatchedPath:
         outcome = process(d, sdb, evt("Spirit Bolt", "Tank", 2.0))
         assert outcome.disposition is Disposition.UNMATCHED_NEW
 
-    def test_unmatched_ttl_capped_short(self):
-        # OCR produced a 233 s "duration"; unmatched cap should clamp it.
+    def test_unmatched_implausible_duration_uses_default(self):
+        # OCR produced a 233 s "duration" (a health value bleeding in).
+        # Over-cap values are discarded for the default, not clamped to the
+        # ceiling, so garbage can't mute the unmatched slot for the full cap.
         clock = FakeClock()
         sdb = db()
-        d = CastDeduper(clock=clock, max_unmatched_ttl_s=10.0)
+        d = CastDeduper(clock=clock, default_ttl_s=5.0, max_unmatched_ttl_s=10.0)
         outcome = process(d, sdb, evt("Some Spell", "X", duration=233.0))
-        assert outcome.ttl_s == 10.0
+        assert outcome.ttl_s == 5.0
 
     def test_unmatched_no_duration_uses_default(self):
         clock = FakeClock()

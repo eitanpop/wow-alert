@@ -27,15 +27,23 @@ Example (`config/classes/paladin/holy.yaml`):
 
 Three axes describe an action:
   - `category` — controlled vocab: `defensive`, `heal`, `dispel`,
-    `interrupt`, `cc`, `stop`. Validated against ALLOWED_CATEGORIES.
+    `interrupt`, `cc`, `stop`, `utility`. `utility` is for abilities that
+    are NOT damage mitigation — snare/root breaks like Blessing of Freedom
+    or Tiger's Lust — so damage-mitigation rules (`category: defensive`)
+    don't bind them by accident. Each value validated against
+    ALLOWED_CATEGORIES. May be a single value or a list when one ability
+    serves several roles (e.g. Revival is both a party heal and a mass
+    dispel: `category: [heal, dispel]`). A rule's `category` filter
+    matches if it is among the action's categories.
   - `scope` — controlled vocab: `self`, `single_target`, `party_wide`,
     `raid_wide`. Validated against ALLOWED_SCOPES.
   - `tags` — free-form list of strings; rules use `has_tag` / `lacks_tag`
     predicates to filter. Add tags as you author rules that need them.
 
 `spell_id` is the canonical WoW spell ID. It joins this action to the
-icon database at `config/icons/<spell_id>.png` (used by the calibration
-matcher to identify icons on the player's cooldown manager) and to the
+icon database (one reference PNG per spell_id, in the user-data icons
+dir; used by the calibration matcher to identify icons on the player's
+cooldown manager) and to the
 cooldown availability dict (rule engine skips actions whose spell_id is
 currently on cooldown).
 """
@@ -50,7 +58,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 logger = logging.getLogger(__name__)
 
 
-ALLOWED_CATEGORIES = {"defensive", "heal", "dispel", "interrupt", "cc", "stop"}
+ALLOWED_CATEGORIES = {"defensive", "heal", "dispel", "interrupt", "cc", "stop", "utility"}
 ALLOWED_SCOPES = {"self", "single_target", "party_wide", "raid_wide"}
 
 
@@ -59,7 +67,13 @@ class ClassAction(BaseModel):
 
     id: str = Field(description="Stable identifier; referenced by rule 'do' fields.")
     label: str = Field(description="Short TTS-friendly name. Spoken when the action fires.")
-    category: str = Field(description="One of ALLOWED_CATEGORIES.")
+    category: list[str] = Field(
+        description=(
+            "One or more of ALLOWED_CATEGORIES. Accepts a single string in "
+            "YAML (normalized to a one-element list). A rule's category "
+            "filter matches when it is among these."
+        ),
+    )
     scope: str = Field(description="One of ALLOWED_SCOPES.")
     tags: list[str] = Field(
         default_factory=list,
@@ -67,21 +81,24 @@ class ClassAction(BaseModel):
     )
     spell_id: int = Field(
         description=(
-            "Canonical WoW spell ID. Joins this action to its icon PNG at "
-            "config/icons/<spell_id>.png (used by the calibration matcher) "
+            "Canonical WoW spell ID. Joins this action to its reference icon "
+            "PNG in the user-data icons dir (used by the calibration matcher) "
             "and to the cooldown availability dict (rule engine skips "
             "actions whose spell_id is on cooldown)."
         ),
     )
 
-    @field_validator("category")
+    @field_validator("category", mode="before")
     @classmethod
-    def _validate_category(cls, v: str) -> str:
-        if v not in ALLOWED_CATEGORIES:
+    def _normalize_category(cls, v: str | list[str]) -> list[str]:
+        cats = [v] if isinstance(v, str) else list(v)
+        bad = [c for c in cats if c not in ALLOWED_CATEGORIES]
+        if bad:
             raise ValueError(
-                f"category must be one of {sorted(ALLOWED_CATEGORIES)}, got {v!r}"
+                f"category values must each be one of {sorted(ALLOWED_CATEGORIES)}, "
+                f"got {bad!r}"
             )
-        return v
+        return cats
 
     @field_validator("scope")
     @classmethod

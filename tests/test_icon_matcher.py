@@ -146,6 +146,18 @@ class TestIconMatcher:
         assert passed is True
         assert score > 0.95  # squaring strips noise → near-identical match
 
+    def test_allowed_spell_ids_restricts_references(self, tmp_path: Path):
+        # Three references on disk; restrict to just one.
+        _write_icons(tmp_path, [1022, 6940, 465])
+        matcher = IconMatcher(tmp_path, allowed_spell_ids={6940})
+        assert len(matcher) == 1
+        # An icon that's identical to a NON-allowed reference must NOT
+        # match it; matcher only knows about 6940.
+        bop_crop = _make_icon(1022)
+        closest, _, passed = matcher.match(bop_crop)
+        assert closest == 6940  # only loaded reference, so it's the "closest"
+        assert passed is False  # but it's not actually a match — low score
+
     def test_off_center_chrome_still_finds_closest(self, tmp_path: Path):
         # Asymmetric chrome (more on the bottom than top — realistic for
         # keybind labels) shifts the centered-square slightly off the

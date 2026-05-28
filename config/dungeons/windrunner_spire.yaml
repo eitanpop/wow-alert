@@ -21,21 +21,11 @@ spells:
     name: "Spirit Bolt"
     aliases: ["Spirit Boit", "Spirlt Bolt"]
     severity: danger
-    phrase: KICK SPIRIT BOLT
+    phrase: ""
     cast_by: mob
     school: shadow
     interruptible: true
-    notes: "Restless Steward filler cast. Interrupt when possible."
-
-  - id: windrunner_spire_soul_torment
-    name: "Soul Torment"
-    aliases: ["Soul Tormemt", "SouI Torment"]
-    severity: danger
-    phrase: STOP SOUL TORMENT
-    cast_by: mob
-    school: shadow
-    interruptible: false
-    notes: "Restless Steward. Very dangerous magic DoT; stop the cast/effect or dispel quickly."
+    notes: "Restless Steward filler cast."
 
   - id: windrunner_spire_arcane_salvo
     name: "Arcane Salvo"
@@ -101,7 +91,7 @@ spells:
     name: "Fungal Bolt"
     aliases: ["Fungai Bolt", "Fungal Boit"]
     severity: danger
-    phrase: KICK FUNGAL
+    phrase: ""
     cast_by: mob
     school: nature
     interruptible: true
@@ -201,7 +191,7 @@ spells:
     name: "Shadow Bolt"
     aliases: ["Shadow Boit", "Shad0w Bolt"]
     severity: danger
-    phrase: KICK SHADOW
+    phrase: ""
     cast_by: mob
     school: shadow
     interruptible: true
@@ -321,11 +311,11 @@ spells:
     name: "Interrupting Screech"
     aliases: ["Interrupt Screech", "Interupting Screech"]
     severity: danger
-    phrase: STOP CASTING
+    phrase: DEFENSIVE SCREECH
     cast_by: mob
     school: physical
     interruptible: false
-    notes: "Stop casting before it finishes."
+    notes: "Phalanx Breaker group-wide damage."
 
   - id: windrunner_spire_throw_axe
     name: "Throw Axe"
@@ -460,12 +450,12 @@ spells:
   - id: windrunner_spire_bolt_gale
     name: "Bolt Gale"
     aliases: ["Boit Gale", "Bolt Gaie"]
-    severity: danger
-    phrase: DEFENSIVE GALE
+    severity: info
+    phrase: DODGE FRONTAL
     cast_by: boss
     school: nature
     interruptible: false
-    notes: "The Restless Heart targeted/party pressure."
+    notes: "The Restless Heart frontal cone (Shadowmeld-avoidable)."
 
   - id: windrunner_spire_billowing_wind
     name: "Billowing Wind"
@@ -486,6 +476,143 @@ spells:
     school: nature
     interruptible: false
     notes: "The Restless Heart tank hit."
+
+  # ---- Added from method.gg ability tracker (12.0.5) ----
+  # Tank busters: each fires a tank-external rule (Sac, not BoP — BoP
+  # drops threat) in the rules section below.
+  - id: windrunner_spire_precise_cut
+    name: "Precise Cut"
+    aliases: ["Preclse Cut", "Precise Cut"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Windrunner Soldier high tank hit with a self-buff."
+
+  - id: windrunner_spire_fierce_slash
+    name: "Fierce Slash"
+    aliases: ["Fierce Siash", "Flerce Slash"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Zealous Reaver high tank hit with a buff."
+
+  - id: windrunner_spire_brutal_chop
+    name: "Brutal Chop"
+    aliases: ["Brutai Chop", "Brutal Ch0p"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Flesh Behemoth high tank hit."
+
+  - id: windrunner_spire_shred_flesh
+    name: "Shred Flesh"
+    aliases: ["Shred Fiesh", "Shred Flesn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Loyal Worg high tank hit with a debuff."
+
+  - id: windrunner_spire_intercepting_charge
+    name: "Intercepting Charge"
+    aliases: ["Intercepting Cnarge", "Interceptlng Charge"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Haunting Grunt high tank hit."
+
+  # Group-wide damage: party-wide defensive callouts.
+  - id: windrunner_spire_ferocious_pounce
+    name: "Ferocious Pounce"
+    aliases: ["Ferocious Pounce", "Feroclous Pounce"]
+    severity: danger
+    phrase: DEFENSIVE POUNCE
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Apex Lynx party-wide damage with an avoidable component."
+
+  - id: windrunner_spire_gust_shot
+    name: "Gust Shot"
+    aliases: ["Gust Sh0t", "Gusl Shot"]
+    severity: danger
+    phrase: DEFENSIVE GUST
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "The Restless Heart party damage in an avoidable zone."
+
+  # Tank armor shred — sustained tank-damage amp, healer watch signal.
+  - id: windrunner_spire_shear_armor
+    name: "Shear Armor"
+    aliases: ["Shear Armor", "Snear Armor"]
+    severity: info
+    phrase: TANK ARMOR SHRED
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Dutiful Groundskeeper. Increases tank damage taken (stacking)."
+
+  # Avoidable ground zone.
+  - id: windrunner_spire_bullseye_windblast
+    name: "Bullseye Windblast"
+    aliases: ["Bullseye Windbiast", "Buliseye Windblast"]
+    severity: info
+    phrase: DODGE WINDBLAST
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "The Restless Heart avoidable zone with crowd control."
+
+  # ---- Added from method.gg audit (12.0.5) ----
+  - id: windrunner_spire_soul_torment
+    name: "Soul Torment"
+    aliases: ["Soul Torment", "Soui Torment", "Soul Tormenl"]
+    severity: danger
+    phrase: DEFENSIVE TORMENT
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Spellguard Magus group-wide damage with a debuff."
+
+  - id: windrunner_spire_ephemeral_bloodlust
+    name: "Ephemeral Bloodlust"
+    aliases: ["Ephemeral Bloodlust", "Ephemerai Bloodlust", "Ephemeral Bl0odlust"]
+    severity: info
+    phrase: MYSTIC EMPOWERED
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Phantasmal Mystic self-buff (haste) that raises tank damage taken."
+
+  - id: windrunner_spire_bolstering_flames
+    name: "Bolstering Flames"
+    aliases: ["Bolstering Flames", "Bolsterlng Flames", "Bolstering Fiames"]
+    severity: info
+    phrase: BOLSTERING FLAMES
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Territorial Dragonhawk self-buff (bolster)."
+
+  - id: windrunner_spire_freezing_trap
+    name: "Freezing Trap"
+    aliases: ["Freezing Trap", "Freezlng Trap", "Freezing Trep"]
+    severity: info
+    phrase: DODGE TRAP
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Scouting Trapper avoidable trap with a debuff."
 
 # Per-dungeon rules.
 #
@@ -544,10 +671,46 @@ rules:
       # No further priority = falls through to the spell-default Alert
       # ("KICK SPIRIT BOLT").
 
+  # Same kick-or-fall-through shape for the other interruptible casts.
+  - on_cast: { spell_id: windrunner_spire_fungal_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_poison_blade }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_shadow_bolt_trash }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # Chain Lightning is interruptible AND pulses the group — kick first,
+  # otherwise soften with a raid defensive / heal.
+  - on_cast: { spell_id: windrunner_spire_chain_lightning }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
   # Pulsing Shriek puts up an absorb shield that pulses group-wide damage
   # until the shield is broken. An interrupt breaks it, but the audible
   # callout that's useful in the moment is "Break Shield" — not "Rebuke".
-  # If no interrupt is up, a party-wide defensive softens the pulses.
+  # If no interrupt is up, a party-wide defensive (then heal) softens the
+  # pulses.
   - on_cast:
       spell_id: windrunner_spire_pulsing_shriek
     priorities:
@@ -559,17 +722,9 @@ rules:
         scope: party_wide
         say: "{action.label}"
         do: "{action.id}"
-
-  # ---- Magic-dispellable casts ----
-  # Cleanse on a paladin carries tag `magic`; the priority asks for that
-  # category + tag. For non-magic dispels (curses, poisons), the same
-  # shape works with `has_tag: curse` etc.
-  - on_cast:
-      spell_id: windrunner_spire_soul_torment
-    priorities:
-      - category: dispel
-        has_tag: magic
-        say: "{action.label} {target}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
         do: "{action.id}"
 
   # ---- Tank-specific vs generic (specificity demo) ----
@@ -591,14 +746,18 @@ rules:
         do: "{action.id}"
       - say: "Tank Buster on {target}"  # nothing available — just warn
 
-  # Same spell, NOT on the tank. Three branches:
+  # Same spell, NOT on the tank. Four branches:
   #   1. Target visible, single-target defensive up → call the defensive
   #      on that target (BoP is fine on a non-tank).
   #   2. No target visible — speaking "BOP" alone is meaningless, so
   #      switch to whatever party-wide defensive the player has
   #      (Devotion Aura / Aura Mastery for paladin; whatever sits in
   #      the class library at scope=party_wide for other classes).
-  #   3. Nothing available → fall through to the spell's default
+  #   3. No party-wide defensive available (mistweaver doesn't have
+  #      one) → fall back to a party-wide HEAL (Revival, Yu'lon) with
+  #      a "{spell}"-prefixed audio so the player hears "Arcane Salvo
+  #      Revival" — context + action.
+  #   4. Nothing available → fall through to the spell's default
   #      DEFENSIVE ARCANE.
   - on_cast:
       spell_id: windrunner_spire_arcane_salvo
@@ -612,6 +771,10 @@ rules:
         scope: party_wide
         target_present: false
         say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{spell} → {action.label}"
         do: "{action.id}"
 
   # ---- Curse dispel example ----
@@ -627,3 +790,203 @@ rules:
         say: "{action.label} {target}"
         do: "{action.id}"
       - say: "Curse on {target} — needs dispel"
+
+  # ---- Stops (CC the channel, not a kick) ----
+  # Fire Spit is a non-interruptible channel; a knockback or stun stops it.
+  - on_cast: { spell_id: windrunner_spire_fire_spit }
+    priorities:
+      - category: stop
+        say: "{action.label} the cast"
+        do: "{action.id}"
+      - category: cc
+        say: "{action.label} the caster"
+        do: "{action.id}"
+
+  # ---- Tank busters ----
+  # Recommend a non-aggro-dropping single-target external (Sac / Cocoon /
+  # Holy Bulwark) on the tank; otherwise fall through to the "TANK BUSTER"
+  # default. Both boss and trash tank hits get the callout — the rule only
+  # fires when an external is actually up, and dedup prevents spam.
+  - on_cast: { spell_id: windrunner_spire_searing_beak }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_bone_hack }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_rampage }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_tempest_slash }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_precise_cut }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_fierce_slash }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_brutal_chop }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_shred_flesh }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_intercepting_charge }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---- Party-wide damage ----
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: windrunner_spire_spore_dispersal }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_splattering_spew }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_flame_nova }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_rallying_bellow }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_ferocious_pounce }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_gust_shot }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_burning_gale }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_soul_torment }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_fetid_spew }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: windrunner_spire_interrupting_screech }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

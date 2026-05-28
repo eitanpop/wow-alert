@@ -1,0 +1,699 @@
+# Pit of Saron spell database. Loaded when calibration identifies this
+# dungeon (slug: pit_of_saron).
+#
+# Authored from the method.gg ability tracker (Midnight 12.0.5):
+#   https://www.method.gg/guides/dungeons/pit-of-saron/ability-tracker
+#
+# Spell schema (authoritative: wow_alert/events.py:Spell):
+#   id / name / aliases / severity / phrase / duration / cast_by /
+#   school / interruptible / notes
+#
+# Dispel note: the tracker tags effects "blessing-of-freedom" (snare/root
+# that Freedom or Tiger's Lust clears) and "stoneform/shadowmeld" (racial
+# self-cleanses). None are healer dispels, so no dispel/snare rules are
+# authored. Mob self-buffs (Deathless Bond, Necromantic Infusion,
+# Necrolink, Plague Frenzy) are info heads-ups — set them to `ignore` if
+# the audio is noisy. Omitted: no-detail casts (Charging Slash, Frost
+# Spit). "Rotting Strikes" is cast by a trash mob and by the boss; one
+# entry, since the cast bar can't tell them apart.
+
+dungeon: "Pit of Saron"
+
+spells:
+  # ===================== SHARED / MERGED CAST =====================
+  # Rotting Ghoul (trash) and Scourgelord Tyrannus (boss).
+  - id: pos_rotting_strikes
+    name: "Rotting Strikes"
+    aliases: ["Rotting Strikes", "Rottlng Strikes", "Rotting Strlkes"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: [mob, boss]
+    school: physical
+    interruptible: false
+    notes: "Tank hit with a debuff, from Rotting Ghoul and Scourgelord Tyrannus."
+
+  # ============================ TRASH ============================
+
+  # ---- Quarry Tormentor ----
+  - id: pos_tormenting_blade
+    name: "Tormenting Blade"
+    aliases: ["Tormenting Blade", "Tormentlng Blade", "Tormenting Biade"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Quarry Tormentor tank hit with a self-buff."
+
+  - id: pos_curse_of_torment
+    name: "Curse of Torment"
+    aliases: ["Curse of Torment", "Curse of Tormenl", "Curse 0f Torment"]
+    severity: danger
+    phrase: CURSE OF TORMENT
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Quarry Tormentor single-target debuff. Important."
+
+  # ---- Wrathbone Enforcer ----
+  - id: pos_sunderstrike
+    name: "Sunderstrike"
+    aliases: ["Sunderstrike", "Sunderstrlke", "Sunderstrik3"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Wrathbone Enforcer tank hit with a buff and debuff."
+
+  # ---- Gloombound Shadebringer ----
+  - id: pos_shadow_bolt
+    name: "Shadow Bolt"
+    aliases: ["Shadow Bolt", "Shadow Boit", "Shad0w Bolt"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Gloombound Shadebringer filler cast. Interrupt."
+
+  # ---- Leaping Geist ----
+  - id: pos_leaping_maul
+    name: "Leaping Maul"
+    aliases: ["Leaping Maul", "Leaplng Maul", "Leaping Maui"]
+    severity: info
+    phrase: DODGE MAUL
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Leaping Geist avoidable leap."
+
+  # ---- Dreadpulse Lich ----
+  - id: pos_icy_blast
+    name: "Icy Blast"
+    aliases: ["Icy Blast", "Icy Biast", "Icy Blasl"]
+    severity: danger
+    phrase: KICK ICY BLAST
+    cast_by: mob
+    school: frost
+    interruptible: true
+    notes: "Dreadpulse Lich interruptible tank-hit cast. Interrupt to prevent it. Important."
+
+  - id: pos_torrent_of_misery
+    name: "Torrent of Misery"
+    aliases: ["Torrent of Misery", "Torrent of Mlsery", "Torrenl of Misery"]
+    severity: info
+    phrase: TORRENT OF MISERY
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Dreadpulse Lich targeted beam (Shadowmeld-avoidable)."
+
+  - id: pos_dread_pulse
+    name: "Dread Pulse"
+    aliases: ["Dread Pulse", "Dread Puise", "Dread Puls3"]
+    severity: danger
+    phrase: DEFENSIVE DREAD PULSE
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Dreadpulse Lich group-wide damage. Important."
+
+  # ---- Deathwhisper Necrolyte ----
+  - id: pos_deathless_bond
+    name: "Deathless Bond"
+    aliases: ["Deathless Bond", "Deathiess Bond", "Deathless B0nd"]
+    severity: info
+    phrase: DEATHLESS BOND
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Deathwhisper Necrolyte buff."
+
+  - id: pos_necromantic_infusion
+    name: "Necromantic Infusion"
+    aliases: ["Necromantic Infusion", "Necromantlc Infusion", "Necromantic Infusi0n"]
+    severity: info
+    phrase: NECROMANTIC INFUSION
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Deathwhisper Necrolyte empowerment buff."
+
+  # ---- Arcanist Cadaver ----
+  - id: pos_netherburst
+    name: "Netherburst"
+    aliases: ["Netherburst", "Netherbursl", "Nethsrburst"]
+    severity: danger
+    phrase: KICK NETHERBURST
+    cast_by: mob
+    school: arcane
+    interruptible: true
+    notes: "Arcanist Cadaver group-wide damage. Interrupt; otherwise use a raid defensive. Important."
+
+  # ---- Ymirjar Graveblade ----
+  - id: pos_dark_rupture
+    name: "Dark Rupture"
+    aliases: ["Dark Rupture", "Dark Ruptur3", "Dark Ruplure"]
+    severity: info
+    phrase: DODGE DARK RUPTURE
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Ymirjar Graveblade avoidable ground effect."
+
+  - id: pos_frostbane_slash
+    name: "Frostbane Slash"
+    aliases: ["Frostbane Slash", "Frostbane Siash", "Frostbane Slasn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Ymirjar Graveblade tank hit with a debuff."
+
+  # ---- Lumbering Plaguehorror ----
+  - id: pos_blight_splatter
+    name: "Blight Splatter"
+    aliases: ["Blight Splatter", "Bllght Splatter", "Blight Spiatter"]
+    severity: info
+    phrase: DODGE BLIGHT
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Lumbering Plaguehorror avoidable ground effect."
+
+  - id: pos_plague_frenzy
+    name: "Plague Frenzy"
+    aliases: ["Plague Frenzy", "Plague Frenzv", "Piague Frenzy"]
+    severity: info
+    phrase: PLAGUEHORROR FRENZIED
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Lumbering Plaguehorror enrage buff (Soothe-able)."
+
+  # ---- Rimebone Coldwraith ----
+  - id: pos_icebolt
+    name: "Icebolt"
+    aliases: ["Icebolt", "Iceboit", "IcebolI"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: frost
+    interruptible: true
+    notes: "Rimebone Coldwraith filler cast. Interrupt."
+
+  - id: pos_permeating_cold
+    name: "Permeating Cold"
+    aliases: ["Permeating Cold", "Permeatlng Cold", "Permeating Coid"]
+    severity: danger
+    phrase: DEFENSIVE PERMEATING COLD
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Rimebone Coldwraith group-wide damage; applies a snare (Freedom clears it). Important."
+
+  # ---- Iceborn Proto-Drake ----
+  - id: pos_icy_strikes
+    name: "Icy Strikes"
+    aliases: ["Icy Strikes", "Icy Strlkes", "Icy Strikss"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Iceborn Proto-Drake tank hit with a self-buff."
+
+  - id: pos_frost_breath
+    name: "Frost Breath"
+    aliases: ["Frost Breath", "Frost Breatn", "Fr0st Breath"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Iceborn Proto-Drake frontal cone."
+
+  # ===================== FORGEMASTER GARFROST =====================
+  - id: pos_siphoning_chill
+    name: "Siphoning Chill"
+    aliases: ["Siphoning Chill", "Siphonlng Chill", "Siphoning Chiil"]
+    severity: danger
+    phrase: DEFENSIVE SIPHONING CHILL
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Forgemaster Garfrost group-wide damage plus a self-buff."
+
+  - id: pos_throw_saronite
+    name: "Throw Saronite"
+    aliases: ["Throw Saronite", "Throw Saronlte", "Throw Saron ite"]
+    severity: info
+    phrase: DODGE SARONITE
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Forgemaster Garfrost avoidable ground impact."
+
+  - id: pos_orebreaker
+    name: "Orebreaker"
+    aliases: ["Orebreaker", "0rebreaker", "Orebreaksr"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Forgemaster Garfrost tank hit with a knock/CC."
+
+  - id: pos_glacial_overload
+    name: "Glacial Overload"
+    aliases: ["Glacial Overload", "Glaclal Overload", "Glacial Overioad"]
+    severity: info
+    phrase: BREAK LINE OF SIGHT
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Forgemaster Garfrost. Break line of sight to avoid; non-physical."
+
+  - id: pos_cryostomp
+    name: "Cryostomp"
+    aliases: ["Cryostomp", "Cryost0mp", "Cryostornp"]
+    severity: danger
+    phrase: DEFENSIVE CRYOSTOMP
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Forgemaster Garfrost group-wide damage; applies a snare (Freedom clears it)."
+
+  # ======================== ICK AND KRICK ========================
+  - id: pos_necrolink
+    name: "Necrolink"
+    aliases: ["Necrolink", "Necroiink", "Necrollnk"]
+    severity: info
+    phrase: NECROLINK
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Ick and Krick buff."
+
+  - id: pos_shade_shift
+    name: "Shade Shift"
+    aliases: ["Shade Shift", "Shade Shlft", "Shade Shifl"]
+    severity: danger
+    phrase: DEFENSIVE SHADE SHIFT
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Ick and Krick group-wide damage; spawns adds."
+
+  - id: pos_shadowbind
+    name: "Shadowbind"
+    aliases: ["Shadowbind", "Shadowblnd", "Shad0wbind"]
+    severity: danger
+    phrase: KICK SHADOWBIND
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Ick and Krick. Interrupt; applies a snare/CC (Freedom clears it)."
+
+  - id: pos_death_bolt
+    name: "Death Bolt"
+    aliases: ["Death Bolt", "Death Boit", "Deatn Bolt"]
+    severity: danger
+    phrase: KICK DEATH BOLT
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Ick and Krick filler cast. Interrupt."
+
+  - id: pos_blight_smash
+    name: "Blight Smash"
+    aliases: ["Blight Smash", "Bllght Smash", "Blight Smasn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Ick and Krick tank hit with an avoidable component."
+
+  - id: pos_plague_explosion
+    name: "Plague Explosion"
+    aliases: ["Plague Explosion", "Plague Expiosion", "Plague Explosi0n"]
+    severity: danger
+    phrase: DEFENSIVE PLAGUE EXPLOSION
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Ick and Krick group-wide damage; avoidable."
+
+  - id: pos_get_em_ick
+    name: "Get 'Em, Ick!"
+    aliases: ["Get 'Em, Ick!", "Get Em Ick", "Get 'Em Ick"]
+    severity: info
+    phrase: RUN FROM ICK
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Ick and Krick chase; avoidable, applies a debuff."
+
+  # ============================ GLACIETH ============================
+  - id: pos_cryoburst
+    name: "Cryoburst"
+    aliases: ["Cryoburst", "Cryobursl", "Cryoburs t"]
+    severity: danger
+    phrase: DEFENSIVE CRYOBURST
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Glacieth group-wide damage; avoidable. Important."
+
+  - id: pos_focused_guard
+    name: "Focused Guard"
+    aliases: ["Focused Guard", "Focused Guerd", "Focused Guar d"]
+    severity: danger
+    phrase: DEFENSIVE FOCUSED GUARD
+    cast_by: mob
+    school: frost
+    interruptible: false
+    notes: "Glacieth group-wide frontal damage."
+
+  # ===================== SCOURGELORD TYRANNUS =====================
+  - id: pos_bone_infusion
+    name: "Bone Infusion"
+    aliases: ["Bone Infusion", "Bone Infusi0n", "Bone Infuslon"]
+    severity: danger
+    phrase: DEFENSIVE BONE INFUSION
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Scourgelord Tyrannus group-wide damage plus a self-buff; non-physical."
+
+  - id: pos_rime_blast
+    name: "Rime Blast"
+    aliases: ["Rime Blast", "Rime Biast", "Rlme Blast"]
+    severity: danger
+    phrase: DEFENSIVE RIME BLAST
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Scourgelord Tyrannus group-wide damage; avoidable."
+
+  - id: pos_scourgelords_brand
+    name: "Scourgelord's Brand"
+    aliases: ["Scourgelord's Brand", "Scourgelords Brand", "Scourgelord's Brend"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Scourgelord Tyrannus tank hit; avoidable component, CC, non-physical."
+
+  - id: pos_deaths_grasp
+    name: "Death's Grasp"
+    aliases: ["Death's Grasp", "Deaths Grasp", "Death's Grasp"]
+    severity: info
+    phrase: DODGE DEATHS GRASP
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Scourgelord Tyrannus pull; avoidable."
+
+  - id: pos_army_of_the_dead
+    name: "Army of the Dead"
+    aliases: ["Army of the Dead", "Army of the Dsad", "Army of the Dead"]
+    severity: info
+    phrase: KILL ADDS
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Scourgelord Tyrannus spawns adds."
+
+  - id: pos_plague_bolt
+    name: "Plague Bolt"
+    aliases: ["Plague Bolt", "Plague Boit", "Piague Bolt"]
+    severity: danger
+    phrase: KICK PLAGUE BOLT
+    cast_by: boss
+    school: nature
+    interruptible: true
+    notes: "Scourgelord Tyrannus filler cast. Interrupt."
+
+  - id: pos_festering_pulse
+    name: "Festering Pulse"
+    aliases: ["Festering Pulse", "Festerlng Pulse", "Festering Puise"]
+    severity: danger
+    phrase: DEFENSIVE FESTERING PULSE
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Scourgelord Tyrannus group-wide damage plus a self-buff."
+
+  - id: pos_ice_barrage
+    name: "Ice Barrage"
+    aliases: ["Ice Barrage", "Ice Barrag3", "Ice Barr age"]
+    severity: info
+    phrase: DODGE ICE BARRAGE
+    cast_by: boss
+    school: frost
+    interruptible: false
+    notes: "Scourgelord Tyrannus avoidable ground effect."
+
+  # ============================ PLUNGETALON ============================
+  - id: pos_plungegrip
+    name: "Plungegrip"
+    aliases: ["Plungegrip", "Plungegrlp", "Plungegrlp"]
+    severity: danger
+    phrase: KICK PLUNGEGRIP
+    cast_by: mob
+    school: physical
+    interruptible: true
+    notes: "Plungetalon. Interrupt (or stop with CC); applies a snare (Freedom clears it). Important."
+
+# ============================== RULES ==============================
+# Class-agnostic: each priority binds whatever the calibrated class
+# library offers; if nothing matches, the engine falls through to the
+# spell's default phrase.
+#
+# Patterns:
+#   interrupt      category: interrupt → kick the caster
+#   tank-external  single_target defensive, lacks_tag aggro_dropping
+#                  (Sac / Cocoon, not BoP — BoP drops threat)
+#   party-wide     party_wide defensive → party_wide heal → spell default
+rules:
+  # ---------------- Interrupts ----------------
+  - on_cast: { spell_id: pos_shadow_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_icy_blast }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_icebolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_shadowbind }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_death_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_plague_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_plungegrip }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # Interruptible boss cast that also pulses the group — kick first,
+  # otherwise soften with a raid defensive / heal.
+  - on_cast: { spell_id: pos_netherburst }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---------------- Tank busters (boss) ----------------
+  # Trash tank hits (Tormenting Blade, Sunderstrike, Frostbane Slash, Icy
+  # Strikes) are left as plain alerts — externals are saved for boss hits.
+  - on_cast: { spell_id: pos_rotting_strikes }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_orebreaker }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_blight_smash }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_scourgelords_brand }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Party-wide damage ----------------
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: pos_dread_pulse }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_permeating_cold }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_siphoning_chill }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_cryostomp }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_shade_shift }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_plague_explosion }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_cryoburst }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_focused_guard }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_bone_infusion }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_rime_blast }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: pos_festering_pulse }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

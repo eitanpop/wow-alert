@@ -1,0 +1,609 @@
+# Skyreach spell database. Loaded when calibration identifies this
+# dungeon (slug: skyreach).
+#
+# Authored from the method.gg ability tracker (Midnight 12.0.5):
+#   https://www.method.gg/guides/dungeons/skyreach/ability-tracker
+#
+# Spell schema (authoritative: wow_alert/events.py:Spell):
+#   id / name / aliases / severity / phrase / duration / cast_by /
+#   school / interruptible / notes
+#
+# Dispel note: the tracker tags effects "stoneform/shadowmeld" (racial
+# self-cleanses); none are healer dispels, so no dispel rules are
+# authored. Mob self-buffs that raise tank damage (Rushing Winds) are
+# info heads-ups — set to `ignore` if noisy. Omitted: no-detail casts
+# (Dread Wind, Bloodcrazed).
+
+dungeon: "Skyreach"
+
+spells:
+  # ============================ TRASH ============================
+
+  # ---- Soaring Chakram Master ----
+  - id: skyreach_ricocheting_chakram
+    name: "Ricocheting Chakram"
+    aliases: ["Ricocheting Chakram", "Ricochetlng Chakram", "Ricocheting Chakrarn"]
+    severity: danger
+    phrase: DEFENSIVE CHAKRAM
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Soaring Chakram Master group-wide damage."
+
+  # ---- Outcast Warrior ----
+  - id: skyreach_rushing_winds
+    name: "Rushing Winds"
+    aliases: ["Rushing Winds", "Rushlng Winds", "Rushing Wlnds"]
+    severity: info
+    phrase: OUTCAST EMPOWERED
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Outcast Warrior self-buff that raises tank damage taken."
+
+  # ---- Raging Squall ----
+  - id: skyreach_wind_claws
+    name: "Wind Claws"
+    aliases: ["Wind Claws", "Wlnd Claws", "Wind Ciaws"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Raging Squall tank hit with a self-buff."
+
+  - id: skyreach_wrathful_wind
+    name: "Wrathful Wind"
+    aliases: ["Wrathful Wind", "Wrathfui Wind", "Wrathful Wlnd"]
+    severity: danger
+    phrase: DEFENSIVE WRATHFUL WIND
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Raging Squall group-wide damage with a tank component."
+
+  - id: skyreach_wind_blast
+    name: "Wind Blast"
+    aliases: ["Wind Blast", "Wind Biast", "Wlnd Blast"]
+    severity: info
+    phrase: DODGE WIND BLAST
+    cast_by: mob
+    school: nature
+    interruptible: false
+    notes: "Raging Squall avoidable knockback."
+
+  # ---- Driving Gale-Caller ----
+  - id: skyreach_repel
+    name: "Repel"
+    aliases: ["Repel", "Repei", "Repell"]
+    severity: danger
+    phrase: KICK REPEL
+    cast_by: mob
+    school: nature
+    interruptible: true
+    notes: "Driving Gale-Caller group-wide damage. Interrupt; otherwise use a raid defensive."
+
+  # ---- Adorned Bladetalon ----
+  - id: skyreach_shear
+    name: "Shear"
+    aliases: ["Shear", "Snear", "Shea r"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Adorned Bladetalon tank hit."
+
+  - id: skyreach_blade_rush
+    name: "Blade Rush"
+    aliases: ["Blade Rush", "Biade Rush", "Blade Rusn"]
+    severity: danger
+    phrase: DEFENSIVE BLADE RUSH
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Adorned Bladetalon group-wide damage with a debuff."
+
+  # ---- Dread Raven ----
+  - id: skyreach_dire_screech
+    name: "Dire Screech"
+    aliases: ["Dire Screech", "Dlre Screech", "Dire Screecn"]
+    severity: danger
+    phrase: DEFENSIVE DIRE SCREECH
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Dread Raven group-wide damage."
+
+  # ---- Blinding Sun Priestess ----
+  - id: skyreach_blinding_light
+    name: "Blinding Light"
+    aliases: ["Blinding Light", "Blindlng Light", "Blinding Llght"]
+    severity: danger
+    phrase: KICK BLINDING LIGHT
+    cast_by: mob
+    school: holy
+    interruptible: true
+    notes: "Blinding Sun Priestess cast. Interrupt; non-physical."
+
+  - id: skyreach_solar_barrier
+    name: "Solar Barrier"
+    aliases: ["Solar Barrier", "Solar Barrler", "Soiar Barrier"]
+    severity: danger
+    phrase: DEFENSIVE SOLAR BARRIER
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Blinding Sun Priestess group-wide damage plus a self-buff."
+
+  # ---- Adept of the Dawn ----
+  - id: skyreach_fiery_talon
+    name: "Fiery Talon"
+    aliases: ["Fiery Talon", "Fiery Taion", "Flery Talon"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Adept of the Dawn tank hit with a self-buff; non-physical."
+
+  # ---- Initiate of the Rising Sun ----
+  - id: skyreach_solar_bolt
+    name: "Solar Bolt"
+    aliases: ["Solar Bolt", "Solar Boit", "Soiar Bolt"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: fire
+    interruptible: true
+    notes: "Initiate of the Rising Sun filler cast. Interrupt."
+
+  # ---- Solar Elemental ----
+  - id: skyreach_solar_fire
+    name: "Solar Fire"
+    aliases: ["Solar Fire", "Solar Flre", "Soiar Fire"]
+    severity: info
+    phrase: DODGE SOLAR FIRE
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Solar Elemental avoidable ground effect."
+
+  - id: skyreach_solar_orb
+    name: "Solar Orb"
+    aliases: ["Solar Orb", "Solar 0rb", "Soiar Orb"]
+    severity: danger
+    phrase: DEFENSIVE SOLAR ORB
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Solar Elemental group-wide damage."
+
+  # ---- Solar Construct ----
+  - id: skyreach_solar_flame
+    name: "Solar Flame"
+    aliases: ["Solar Flame", "Solar Fiame", "Soiar Flame"]
+    severity: info
+    phrase: SOLAR FLAME
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Solar Construct targeted non-physical effect (Shadowmeld-avoidable)."
+
+  - id: skyreach_solar_nova
+    name: "Solar Nova"
+    aliases: ["Solar Nova", "Solar Nove", "Soiar Nova"]
+    severity: info
+    phrase: DODGE SOLAR NOVA
+    cast_by: mob
+    school: fire
+    interruptible: false
+    notes: "Solar Construct avoidable ground effect."
+
+  # ---- Sun Talon Tamer ----
+  - id: skyreach_mark_of_death
+    name: "Mark of Death"
+    aliases: ["Mark of Death", "Mark of Deatn", "Mark 0f Death"]
+    severity: danger
+    phrase: MARK OF DEATH
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Sun Talon Tamer single-target debuff."
+
+  # ============================== RANJIT ==============================
+  - id: skyreach_gale_surge
+    name: "Gale Surge"
+    aliases: ["Gale Surge", "Gaie Surge", "Gale Surg3"]
+    severity: danger
+    phrase: DEFENSIVE GALE SURGE
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Ranjit group-wide damage; avoidable, CC."
+
+  - id: skyreach_fan_of_blades
+    name: "Fan of Blades"
+    aliases: ["Fan of Blades", "Fan of Biades", "Fan 0f Blades"]
+    severity: danger
+    phrase: DEFENSIVE FAN OF BLADES
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Ranjit group-wide damage with a debuff."
+
+  - id: skyreach_wind_chakram
+    name: "Wind Chakram"
+    aliases: ["Wind Chakram", "Wlnd Chakram", "Wind Chakrarn"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Ranjit frontal cone."
+
+  - id: skyreach_chakram_vortex
+    name: "Chakram Vortex"
+    aliases: ["Chakram Vortex", "Chakram V0rtex", "Chakrarn Vortex"]
+    severity: info
+    phrase: DODGE VORTEX
+    cast_by: boss
+    school: nature
+    interruptible: false
+    notes: "Ranjit avoidable zone with CC."
+
+  # ============================= ARAKNATH =============================
+  - id: skyreach_defensive_protocol
+    name: "Defensive Protocol"
+    aliases: ["Defensive Protocol", "Defensive Protocoi", "Defenslve Protocol"]
+    severity: info
+    phrase: BOSS SHIELDED
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "Araknath defensive self-buff."
+
+  - id: skyreach_blast_wave
+    name: "Blast Wave"
+    aliases: ["Blast Wave", "Biast Wave", "Blast Wav3"]
+    severity: danger
+    phrase: DEFENSIVE BLAST WAVE
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Araknath group-wide damage; non-physical."
+
+  - id: skyreach_fiery_smash
+    name: "Fiery Smash"
+    aliases: ["Fiery Smash", "Fiery Smasn", "Flery Smash"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Araknath frontal cone; non-physical."
+
+  - id: skyreach_energize
+    name: "Energize"
+    aliases: ["Energize", "Energlze", "Energiz3"]
+    severity: danger
+    phrase: DEFENSIVE ENERGIZE
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Araknath group-wide frontal damage."
+
+  - id: skyreach_heat_exhaustion
+    name: "Heat Exhaustion"
+    aliases: ["Heat Exhaustion", "Heat Exhaustlon", "Heat Exhausti0n"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Araknath frontal cone."
+
+  - id: skyreach_supernova
+    name: "Supernova"
+    aliases: ["Supernova", "Supernove", "Supern0va"]
+    severity: danger
+    phrase: DEFENSIVE SUPERNOVA
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Araknath group-wide damage."
+
+  # ============================== RUKHRAN ==============================
+  - id: skyreach_screech
+    name: "Screech"
+    aliases: ["Screech", "Screecn", "Scre ech"]
+    severity: danger
+    phrase: DEFENSIVE SCREECH
+    cast_by: boss
+    school: physical
+    interruptible: false
+    notes: "Rukhran group-wide damage."
+
+  - id: skyreach_burning_claws
+    name: "Burning Claws"
+    aliases: ["Burning Claws", "Burnlng Claws", "Burning Ciaws"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Rukhran tank hit; non-physical."
+
+  - id: skyreach_sunbreak
+    name: "Sunbreak"
+    aliases: ["Sunbreak", "Sunbreek", "Sunbreak"]
+    severity: danger
+    phrase: DEFENSIVE SUNBREAK
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Rukhran group-wide damage; avoidable, spawns adds."
+
+  - id: skyreach_searing_quills
+    name: "Searing Quills"
+    aliases: ["Searing Quills", "Searlng Quills", "Searing Quilis"]
+    severity: info
+    phrase: DODGE QUILLS
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "Rukhran avoidable ground effect."
+
+  # ========================= HIGH SAGE VIRYX =========================
+  - id: skyreach_scorching_ray
+    name: "Scorching Ray"
+    aliases: ["Scorching Ray", "Scorchlng Ray", "Scorching Rav"]
+    severity: danger
+    phrase: DEFENSIVE SCORCHING RAY
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "High Sage Viryx group-wide damage; non-physical."
+
+  - id: skyreach_solar_blast
+    name: "Solar Blast"
+    aliases: ["Solar Blast", "Solar Biast", "Soiar Blast"]
+    severity: danger
+    phrase: KICK SOLAR BLAST
+    cast_by: boss
+    school: fire
+    interruptible: true
+    notes: "High Sage Viryx interruptible tank-hit cast. Interrupt to prevent it."
+
+  - id: skyreach_cast_down
+    name: "Cast Down"
+    aliases: ["Cast Down", "Cast D0wn", "Casl Down"]
+    severity: info
+    phrase: KILL ADDS
+    cast_by: boss
+    school: arcane
+    interruptible: false
+    notes: "High Sage Viryx spawns adds with a CC effect."
+
+  - id: skyreach_lens_flare
+    name: "Lens Flare"
+    aliases: ["Lens Flare", "Lens Fiare", "Lsns Flare"]
+    severity: info
+    phrase: DODGE LENS FLARE
+    cast_by: boss
+    school: fire
+    interruptible: false
+    notes: "High Sage Viryx avoidable ground; non-physical."
+
+# ============================== RULES ==============================
+# Class-agnostic: each priority binds whatever the calibrated class
+# library offers; if nothing matches, the engine falls through to the
+# spell's default phrase.
+#
+# Patterns:
+#   interrupt      category: interrupt → kick the caster
+#   tank-external  single_target defensive, lacks_tag aggro_dropping
+#                  (Sac / Cocoon, not BoP — BoP drops threat)
+#   party-wide     party_wide defensive → party_wide heal → spell default
+rules:
+  # ---------------- Interrupts ----------------
+  - on_cast: { spell_id: skyreach_blinding_light }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_solar_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_solar_blast }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # Interruptible cast that also pulses the group — kick first, otherwise
+  # soften with a raid defensive / heal.
+  - on_cast: { spell_id: skyreach_repel }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---------------- Tank busters (boss) ----------------
+  # Trash tank hits (Shear, Wind Claws, Fiery Talon) are left as plain
+  # alerts — externals are saved for boss hits.
+  - on_cast: { spell_id: skyreach_burning_claws }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Party-wide damage ----------------
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: skyreach_ricocheting_chakram }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_wrathful_wind }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_blade_rush }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_dire_screech }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_solar_barrier }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_solar_orb }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_gale_surge }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_fan_of_blades }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_blast_wave }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_energize }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_supernova }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_screech }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_sunbreak }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: skyreach_scorching_ray }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

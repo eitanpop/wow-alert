@@ -77,7 +77,9 @@ class YamlSpellDb:
         self.replace_spells(spells)
 
     def all_phrases(self) -> list[str]:
-        return sorted({s.phrase for s in self._spells})
+        # Skip blank phrases — those spells are tracked but intentionally
+        # silent, so there's nothing to prerender.
+        return sorted({s.phrase for s in self._spells if s.phrase.strip()})
 
     def set_roster(self, names: Iterable[str]) -> None:
         """Update the roster used by `_target_ok`'s fuzzy-match check.
@@ -125,6 +127,15 @@ class YamlSpellDb:
         exact = self._name_index.get(lower)
         if exact is not None:
             return exact
+
+        # Minimum-length guard. partial_ratio scores a 1-3 char OCR
+        # fragment at ~100 against any name containing those letters
+        # ("t" matches "spiri[t] bol[t]"; "er" matches "disp[er]sal"), and
+        # the same fragment trips the "interrupted" fallback below. Real
+        # cast text — even garbled — is longer; short fragments are screen
+        # noise. Exact short names (e.g. "Hex") already matched above.
+        if len(lower.strip()) < 4:
+            return None
 
         # Fuzzy match across all names. Use max(token_set, partial_ratio):
         #   - token_set_ratio handles spell names with reordered/extra
@@ -247,18 +258,22 @@ class RuleEngine:
 
     def all_phrases(self) -> list[str]:
         """Custom TTS phrases authored in rule priorities (e.g. 'Break
-        Shield'). Used by the prerender pass so any priority.phrase that
-        references a literal string gets a cached WAV before playback.
+        Shield'). Used by the prerender pass so any priority.phrase or
+        priority.phrase_prefix that references a literal string gets a
+        cached WAV before playback.
 
         Phrases that contain template tokens like {target} are skipped —
         those are resolved at decide time, and the components they expand
-        to (action labels, roster names) are prerendered separately.
+        to (action labels, roster names, spell names) are prerendered
+        separately.
         """
         phrases: set[str] = set()
         for rule in self._rules:
             for prio in rule.priorities:
                 if prio.phrase and "{" not in prio.phrase:
                     phrases.add(prio.phrase)
+                if prio.phrase_prefix and "{" not in prio.phrase_prefix:
+                    phrases.add(prio.phrase_prefix)
         return sorted(phrases)
 
     def decide(self, ctx: RuleDecisionContext) -> RuleOutput | None:
@@ -361,7 +376,7 @@ class RuleEngine:
         prio: Priority, ctx: RuleDecisionContext
     ) -> ClassAction | None:
         for action in ctx.class_actions:
-            if prio.category and action.category != prio.category:
+            if prio.category and prio.category not in action.category:
                 continue
             if prio.scope and action.scope != prio.scope:
                 continue
@@ -408,11 +423,22 @@ class RuleEngine:
             else:
                 action = bindings.get("action")
                 phrase = action.label if action is not None else do_value
+            # Default prefix is the spell name — gives the player
+            # CONTEXT before the action ("Arcane Salvo Devotion Aura"
+            # vs bare "Devotion Aura"). Authors override per-rule by
+            # setting phrase_prefix explicitly; "" disables the prefix.
+            if prio.phrase_prefix is None:
+                phrase_prefix = ctx.spell.name
+            elif prio.phrase_prefix == "":
+                phrase_prefix = ""
+            else:
+                phrase_prefix = cls._render(prio.phrase_prefix, ctx, bindings)
             return Recommendation(
                 action=do_value,
                 target=ctx.canonical_target or ctx.cast.target or "",
                 phrase=phrase,
                 message=rendered,
+                phrase_prefix=phrase_prefix,
             )
         return Alert(
             severity=spell.severity,

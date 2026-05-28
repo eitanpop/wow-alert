@@ -166,12 +166,14 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         worker.update_calibration_context(roster, dungeon, roles)
 
         # Prerender every TTS clip the active configuration can emit:
-        # spell default phrases, class-action labels, and roster names
-        # (the latter two are stitched at playback into action+target
-        # callouts like "BOP Captain Garrick"). prerender skips files
-        # already on disk; only new clips are synthesized.
+        # spell default phrases, spell names (for phrase_prefix
+        # "{spell}" expansions), class-action labels, and roster names.
+        # The pipeline stitches at playback into multi-part callouts
+        # like "Arcane Salvo Revival Captain Garrick". prerender skips
+        # files already on disk; only new clips are synthesized.
         needed: set[str] = set()
         needed.update(spell_db.all_phrases())
+        needed.update(s.name for s in spells)
         needed.update(rule_engine.all_phrases())
         needed.update(a.label for a in class_actions)
         needed.update(roster)

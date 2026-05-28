@@ -1,0 +1,740 @@
+# Seat of the Triumvirate spell database. Loaded when calibration
+# identifies this dungeon (slug: seat_of_the_triumvirate).
+#
+# Authored from the method.gg ability tracker (Midnight 12.0.5):
+#   https://www.method.gg/guides/dungeons/seat-of-the-triumvirate/ability-tracker
+#
+# Spell schema (authoritative: wow_alert/events.py:Spell):
+#   id / name / aliases / severity / phrase / duration / cast_by /
+#   school / interruptible / notes
+#
+# Dispel note: the tracker tags effects "blessing-of-freedom" (snare/root
+# that Freedom or Tiger's Lust clears) and "stoneform/shadowmeld" (racial
+# self-cleanses). None are healer dispels, so no dispel/snare rules are
+# authored. Mob self-buffs (Battle Rage, Devouring Frenzy, Siphon Void)
+# are info heads-ups — set to `ignore` if noisy. "Rupture" is one cast
+# (the tracker lists its tags split across two rows); "Gates of the
+# Abyss" merges the singular Grand Shadow-Weaver and plural Viceroy
+# Nezhar variants since the cast bar can't tell them apart.
+
+dungeon: "Seat of the Triumvirate"
+
+spells:
+  # ===================== SHARED / MERGED CASTS =====================
+  - id: sott_rupture
+    name: "Rupture"
+    aliases: ["Rupture", "Ruptur3", "Rupiure"]
+    severity: danger
+    phrase: DEFENSIVE RUPTURE
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Famished Broken group-wide damage with an avoidable component."
+
+  - id: sott_gates_of_the_abyss
+    name: "Gates of the Abyss"
+    aliases: ["Gates of the Abyss", "Gate of the Abyss", "Gates of the Abvss"]
+    severity: info
+    phrase: DODGE ABYSS GATE
+    cast_by: [mob, boss]
+    school: shadow
+    interruptible: false
+    notes: "Avoidable ground effect from Grand Shadow-Weaver and Viceroy Nezhar."
+
+  # ============================ TRASH ============================
+
+  # ---- Merciless Subjugator ----
+  - id: sott_chains_of_subjugation
+    name: "Chains of Subjugation"
+    aliases: ["Chains of Subjugation", "Chains of Subjugatlon", "Chalns of Subjugation"]
+    severity: danger
+    phrase: DEFENSIVE CHAINS
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Merciless Subjugator group-wide damage; applies a snare (Freedom clears it). Important."
+
+  - id: sott_leeching_void
+    name: "Leeching Void"
+    aliases: ["Leeching Void", "Leechlng Void", "Leeching Vold"]
+    severity: info
+    phrase: LEECHING VOID
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Merciless Subjugator single-target non-physical debuff."
+
+  # ---- Shadowguard Champion ----
+  - id: sott_relentless_pursuit
+    name: "Relentless Pursuit"
+    aliases: ["Relentless Pursuit", "Relentiess Pursuit", "Relentless Pursuil"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Shadowguard Champion tank hit with a buff and debuff."
+
+  - id: sott_battle_rage
+    name: "Battle Rage"
+    aliases: ["Battle Rage", "Battie Rage", "Battle Raqe"]
+    severity: info
+    phrase: CHAMPION ENRAGED
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Shadowguard Champion enrage buff that raises tank damage (Soothe-able)."
+
+  # ---- Dark Conjuror ----
+  - id: sott_umbral_bolt
+    name: "Umbral Bolt"
+    aliases: ["Umbral Bolt", "Umbrai Bolt", "Umbral Boit"]
+    severity: danger
+    phrase: ""
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Dark Conjuror filler cast. Interrupt."
+
+  - id: sott_summon_voidcaller
+    name: "Summon Voidcaller"
+    aliases: ["Summon Voidcaller", "Summon Voidcalier", "Summon Voldcaller"]
+    severity: danger
+    phrase: KICK SUMMON
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Dark Conjuror add summon. Interrupt to stop it. Important."
+
+  # ---- Bound Voidcaller ----
+  - id: sott_pulsing_void
+    name: "Pulsing Void"
+    aliases: ["Pulsing Void", "Pulslng Void", "Pulsing Vold"]
+    severity: danger
+    phrase: DEFENSIVE PULSING VOID
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Bound Voidcaller group-wide damage. Important."
+
+  # ---- Rift Warden ----
+  - id: sott_stabilize
+    name: "Stabilize"
+    aliases: ["Stabilize", "Stabiiize", "Stabillze"]
+    severity: danger
+    phrase: DEFENSIVE STABILIZE
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Rift Warden group-wide damage plus a self-buff."
+
+  - id: sott_rift_essence
+    name: "Rift Essence"
+    aliases: ["Rift Essence", "Rlft Essence", "Rift Essenc3"]
+    severity: info
+    phrase: RIFT ESSENCE
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Rift Warden single-target debuff (Stoneform counter)."
+
+  - id: sott_rift_tear
+    name: "Rift Tear"
+    aliases: ["Rift Tear", "Rlft Tear", "Rift Tsar"]
+    severity: danger
+    phrase: DEFENSIVE RIFT TEAR
+    cast_by: mob
+    school: arcane
+    interruptible: false
+    notes: "Rift Warden group-wide damage; avoidable. Important."
+
+  # ---- Ruthless Riftstalker ----
+  - id: sott_backstab
+    name: "Backstab"
+    aliases: ["Backstab", "Backstap", "Backst ab"]
+    severity: danger
+    phrase: BACKSTAB
+    cast_by: mob
+    school: physical
+    interruptible: false
+    notes: "Ruthless Riftstalker single-target debuff. Important."
+
+  - id: sott_shadowmend
+    name: "Shadowmend"
+    aliases: ["Shadowmend", "Shadowrnend", "Shad0wmend"]
+    severity: danger
+    phrase: KICK SHADOWMEND
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Ruthless Riftstalker self-heal. Interrupt or stop with CC."
+
+  # ---- Umbral War-Adept ----
+  - id: sott_void_bash
+    name: "Void Bash"
+    aliases: ["Void Bash", "Vold Bash", "Void Basn"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Umbral War-Adept tank hit."
+
+  - id: sott_void_burst
+    name: "Void Burst"
+    aliases: ["Void Burst", "Vold Burst", "Void Bursl"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Umbral War-Adept frontal cone."
+
+  # ---- Ravenous Umbralfin ----
+  - id: sott_devouring_frenzy
+    name: "Devouring Frenzy"
+    aliases: ["Devouring Frenzy", "Devourlng Frenzy", "Devouring Frenzv"]
+    severity: info
+    phrase: UMBRALFIN FRENZIED
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Ravenous Umbralfin enrage buff (Soothe-able)."
+
+  # ---- Dire Voidbender ----
+  - id: sott_abyssal_enhancement
+    name: "Abyssal Enhancement"
+    aliases: ["Abyssal Enhancement", "Abyssai Enhancement", "Abyssal Enhancemenl"]
+    severity: danger
+    phrase: KICK ENHANCEMENT
+    cast_by: mob
+    school: shadow
+    interruptible: true
+    notes: "Dire Voidbender self-empower plus group damage. Interrupt; otherwise use a raid defensive. Important."
+
+  # ---- Void-Infused Destroyer ----
+  - id: sott_eruption
+    name: "Eruption"
+    aliases: ["Eruption", "Erupti0n", "Eruptlon"]
+    severity: danger
+    phrase: DEFENSIVE ERUPTION
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Void-Infused Destroyer group-wide damage; avoidable. Important."
+
+  - id: sott_void_cleave
+    name: "Void Cleave"
+    aliases: ["Void Cleave", "Vold Cleave", "Void Cieave"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Void-Infused Destroyer frontal cone."
+
+  # ---- Grand Shadow-Weaver ----
+  - id: sott_void_infusion
+    name: "Void Infusion"
+    aliases: ["Void Infusion", "Vold Infusion", "Void Infusi0n"]
+    severity: info
+    phrase: VOID INFUSION
+    cast_by: mob
+    school: shadow
+    interruptible: false
+    notes: "Grand Shadow-Weaver targeted non-physical effect (Shadowmeld-avoidable)."
+
+  # ===================== ZURAAL THE ASCENDED =====================
+  - id: sott_void_slash
+    name: "Void Slash"
+    aliases: ["Void Slash", "Vold Slash", "Void Siash"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Zuraal the Ascended tank hit."
+
+  - id: sott_decimate
+    name: "Decimate"
+    aliases: ["Decimate", "Declmate", "Decimat3"]
+    severity: info
+    phrase: DODGE DECIMATE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Zuraal the Ascended avoidable ground effect."
+
+  - id: sott_null_palm
+    name: "Null Palm"
+    aliases: ["Null Palm", "Nuli Palm", "Null Paim"]
+    severity: info
+    phrase: DODGE FRONTAL
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Zuraal the Ascended frontal cone."
+
+  - id: sott_oozing_slam
+    name: "Oozing Slam"
+    aliases: ["Oozing Slam", "Oozlng Slam", "Oozing Siam"]
+    severity: danger
+    phrase: DEFENSIVE OOZING SLAM
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Zuraal the Ascended group-wide damage; spawns adds."
+
+  - id: sott_crashing_void
+    name: "Crashing Void"
+    aliases: ["Crashing Void", "Crashlng Void", "Crashing Vold"]
+    severity: danger
+    phrase: DEFENSIVE CRASHING VOID
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Zuraal the Ascended group-wide damage with a CC effect."
+
+  # ============================= SAPRISH =============================
+  - id: sott_rending_void
+    name: "Rending Void"
+    aliases: ["Rending Void", "Rendlng Void", "Rending Vold"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Saprish tank hit with a self-buff."
+
+  - id: sott_dread_screech
+    name: "Dread Screech"
+    aliases: ["Dread Screech", "Dread Screecn", "Dread Screcch"]
+    severity: danger
+    phrase: KICK DREAD SCREECH
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Saprish group-wide damage with CC. Interrupt; otherwise use a raid defensive."
+
+  - id: sott_shadow_pounce
+    name: "Shadow Pounce"
+    aliases: ["Shadow Pounce", "Shadow Pounc3", "Shad0w Pounce"]
+    severity: danger
+    phrase: SHADOW POUNCE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Saprish single-target debuff (Stoneform counter)."
+
+  - id: sott_void_bomb
+    name: "Void Bomb"
+    aliases: ["Void Bomb", "Vold Bomb", "Void Bornb"]
+    severity: info
+    phrase: DODGE VOID BOMB
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Saprish avoidable ground; non-physical."
+
+  - id: sott_phase_dash
+    name: "Phase Dash"
+    aliases: ["Phase Dash", "Phase Dasn", "Pnase Dash"]
+    severity: danger
+    phrase: DEFENSIVE PHASE DASH
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Saprish group-wide damage; avoidable."
+
+  - id: sott_overload
+    name: "Overload"
+    aliases: ["Overload", "0verload", "Overioad"]
+    severity: danger
+    phrase: DEFENSIVE OVERLOAD
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Saprish group-wide damage; non-physical."
+
+  # ========================== VICEROY NEZHAR ==========================
+  - id: sott_mind_blast
+    name: "Mind Blast"
+    aliases: ["Mind Blast", "Mlnd Blast", "Mind Biast"]
+    severity: danger
+    phrase: KICK MIND BLAST
+    cast_by: boss
+    school: shadow
+    interruptible: true
+    notes: "Viceroy Nezhar interruptible tank-hit cast. Interrupt to prevent it."
+
+  - id: sott_mass_void_infusion
+    name: "Mass Void Infusion"
+    aliases: ["Mass Void Infusion", "Mass Vold Infusion", "Mass Void Infusi0n"]
+    severity: danger
+    phrase: DEFENSIVE MASS VOID
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Viceroy Nezhar group-wide damage (Shadowmeld counter)."
+
+  - id: sott_umbral_tentacles
+    name: "Umbral Tentacles"
+    aliases: ["Umbral Tentacles", "Umbrai Tentacles", "Umbral Tentacies"]
+    severity: danger
+    phrase: DEFENSIVE TENTACLES
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Viceroy Nezhar group-wide damage; spawns adds."
+
+  - id: sott_collapsing_void
+    name: "Collapsing Void"
+    aliases: ["Collapsing Void", "Collapslng Void", "Collapsing Vold"]
+    severity: danger
+    phrase: DEFENSIVE COLLAPSING VOID
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "Viceroy Nezhar group-wide damage; avoidable, CC."
+
+  # ============================== L'URA ==============================
+  - id: sott_dirge_of_despair
+    name: "Dirge of Despair"
+    aliases: ["Dirge of Despair", "Dirge of Despalr", "Dlrge of Despair"]
+    severity: danger
+    phrase: DEFENSIVE DIRGE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura group-wide damage."
+
+  - id: sott_disintegrate
+    name: "Disintegrate"
+    aliases: ["Disintegrate", "Dlsintegrate", "Disintegrat3"]
+    severity: info
+    phrase: DODGE DISINTEGRATE
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura avoidable effect."
+
+  - id: sott_discordant_beam
+    name: "Discordant Beam"
+    aliases: ["Discordant Beam", "Discordant Bearn", "Dlscordant Beam"]
+    severity: danger
+    phrase: DEFENSIVE DISCORDANT BEAM
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura group-wide frontal damage."
+
+  - id: sott_grim_chorus
+    name: "Grim Chorus"
+    aliases: ["Grim Chorus", "Grlm Chorus", "Grim Choru s"]
+    severity: info
+    phrase: DODGE GRIM CHORUS
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura avoidable; non-physical."
+
+  - id: sott_abyssal_lance
+    name: "Abyssal Lance"
+    aliases: ["Abyssal Lance", "Abyssai Lance", "Abyssal Lanc3"]
+    severity: danger
+    phrase: TANK BUSTER
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura tank hit with a self-buff."
+
+  - id: sott_siphon_void
+    name: "Siphon Void"
+    aliases: ["Siphon Void", "Siphon Vold", "Slphon Void"]
+    severity: info
+    phrase: SIPHON VOID
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura self-buff."
+
+  - id: sott_backlash
+    name: "Backlash"
+    aliases: ["Backlash", "Backiash", "Backlasn"]
+    severity: danger
+    phrase: DEFENSIVE BACKLASH
+    cast_by: boss
+    school: shadow
+    interruptible: false
+    notes: "L'ura group-wide damage with a CC effect."
+
+# ============================== RULES ==============================
+# Class-agnostic: each priority binds whatever the calibrated class
+# library offers; if nothing matches, the engine falls through to the
+# spell's default phrase.
+#
+# Patterns:
+#   interrupt      category: interrupt → kick the caster
+#   tank-external  single_target defensive, lacks_tag aggro_dropping
+#                  (Sac / Cocoon, not BoP — BoP drops threat)
+#   party-wide     party_wide defensive → party_wide heal → spell default
+rules:
+  # ---------------- Interrupts ----------------
+  - on_cast: { spell_id: sott_umbral_bolt }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_summon_voidcaller }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_shadowmend }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_mind_blast }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # Interruptible casts that also pulse the group — kick first, otherwise
+  # soften with a raid defensive / heal.
+  - on_cast: { spell_id: sott_dread_screech }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_abyssal_enhancement }
+    priorities:
+      - category: interrupt
+        say: "{action.label} {target}"
+        do: "{action.id}"
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  # ---------------- Tank busters (boss) ----------------
+  # Trash tank hits (Relentless Pursuit, Void Bash) are left as plain
+  # alerts — externals are saved for boss hits.
+  - on_cast: { spell_id: sott_void_slash }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_rending_void }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_abyssal_lance }
+    priorities:
+      - category: defensive
+        scope: single_target
+        lacks_tag: aggro_dropping
+        say: "{action.label} {target}"
+        do: "{action.id}"
+
+  # ---------------- Party-wide damage ----------------
+  # party-wide defensive → party-wide heal → spell default phrase.
+  - on_cast: { spell_id: sott_rupture }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_chains_of_subjugation }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_pulsing_void }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_stabilize }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_rift_tear }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_eruption }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_oozing_slam }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_crashing_void }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_phase_dash }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_overload }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_mass_void_infusion }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_umbral_tentacles }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_collapsing_void }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_dirge_of_despair }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_discordant_beam }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+
+  - on_cast: { spell_id: sott_backlash }
+    priorities:
+      - category: defensive
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"
+      - category: heal
+        scope: party_wide
+        say: "{action.label}"
+        do: "{action.id}"

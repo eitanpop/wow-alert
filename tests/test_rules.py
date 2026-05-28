@@ -59,6 +59,24 @@ class TestSpellDbLookup:
         db = make_db(Spell(id="poly", name="Polymorph", severity=Severity.DANGER))
         assert db.lookup("", None) is None
 
+    def test_short_ocr_fragment_does_not_match(self):
+        # 1-3 char OCR noise must not match: partial_ratio scores such
+        # fragments ~100 against any name containing those letters
+        # ("t" -> "Spiri[t] Bol[t]", "er" -> "Disp[er]sal"). Regression for
+        # stray-letter false alerts during play.
+        db = make_db(
+            Spell(id="sb", name="Spirit Bolt", severity=Severity.DANGER),
+            Spell(id="sd", name="Spore Dispersal", severity=Severity.DANGER),
+        )
+        assert db.lookup("T", None) is None
+        assert db.lookup("er", None) is None
+        assert db.lookup("Sr", None) is None
+
+    def test_short_exact_name_still_matches(self):
+        # The guard only blocks fuzzy; a real short name still matches exactly.
+        db = make_db(Spell(id="hex", name="Hex", severity=Severity.DANGER))
+        assert db.lookup("Hex", None) is not None
+
 
 class TestTargetFuzzyMatch:
     """Without a roster the target check is permissive; with one it's fuzzy + fail-closed."""
@@ -265,6 +283,83 @@ class TestClassActionFilters:
         assert isinstance(out, Recommendation)
         assert out.action == "sac"
 
+    def test_utility_action_not_bound_by_defensive_rule(self):
+        # Freedom-style utility (snare break) must NOT satisfy a tank-buster
+        # defensive rule, even when the real external is on cooldown.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "scope": "single_target",
+                "lacks_tag": "aggro_dropping",
+                "say": "{action.label} {target}",
+                "do": "{action.id}",
+            }],
+        })
+        sac = action("sac", label="Sac", spell_id=6940)
+        freedom = action("freedom", label="Freedom", category="utility",
+                         scope="single_target", tags=["snare_break"], spell_id=1044)
+        eng.set_class_actions([sac, freedom])
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"), canonical_target="John",
+            cooldowns={6940: True, 1044: False},  # Sac on CD, Freedom up
+        )
+        out = eng.decide(ctx)
+        # Freedom is utility, not defensive → no bind → fall through to the
+        # spell-default Alert, NOT a Freedom recommendation.
+        assert isinstance(out, Alert)
+
+    def test_multi_category_action_binds_for_each_category(self):
+        # Revival-style action: category [heal, dispel] must bind both a
+        # heal rule and a dispel rule.
+        revival = action("revival", label="Revival",
+                         category=["heal", "dispel"], scope="party_wide")
+        for cat in ("heal", "dispel"):
+            eng = engine_with_rules({
+                "on_cast": {"spell_id": "poly"},
+                "priorities": [{
+                    "category": cat,
+                    "scope": "party_wide",
+                    "say": "{action.label}",
+                    "do": "{action.id}",
+                }],
+            })
+            eng.set_class_actions([revival])
+            ctx = RuleDecisionContext(
+                spell=spell(), cast=cast(),
+                cooldowns=all_available(revival),
+            )
+            out = eng.decide(ctx)
+            assert isinstance(out, Recommendation), cat
+            assert out.action == "revival", cat
+
+    def test_single_target_dispel_prefers_detox_over_mass_dispel(self):
+        # Detox (single-target) is listed before Revival so a no-scope
+        # magic-dispel rule binds the cheap targeted dispel, not the
+        # raid cooldown — even though Revival also carries category dispel.
+        detox = action("detox", label="Detox", category="dispel",
+                       scope="single_target", tags=["magic"])
+        revival = action("revival", label="Revival",
+                         category=["heal", "dispel"], scope="party_wide",
+                         tags=["magic", "poison", "disease"])
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "dispel",
+                "has_tag": "magic",
+                "say": "{action.label} {target}",
+                "do": "{action.id}",
+            }],
+        })
+        eng.set_class_actions([detox, revival])  # detox first
+        ctx = RuleDecisionContext(
+            spell=spell(), cast=cast(target="John"), canonical_target="John",
+            cooldowns=all_available(detox, revival),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "detox"
+
     def test_on_cooldown_skips_action(self):
         # First action on cooldown → engine skips to next available one.
         eng = engine_with_rules({
@@ -329,6 +424,81 @@ class TestClassActionFilters:
         out = eng.decide(ctx)
         assert isinstance(out, Alert)  # no `do` → Alert
         assert out.message == "Tank Buster on John"
+
+
+class TestPhrasePrefix:
+    """`phrase_prefix` defaults to the spell name so the player hears
+    context before the action ('Polymorph BOP' instead of 'BOP').
+    Authors override per-rule when they want a different prefix or
+    no prefix at all."""
+
+    def test_default_prefix_is_spell_name(self):
+        # No phrase_prefix set → default is ctx.spell.name.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label} {target}",
+                "do": "{action.id}",
+            }],
+        })
+        actions = [action("bop", label="BOP", spell_id=1022)]
+        eng.set_class_actions(actions)
+        ctx = RuleDecisionContext(
+            spell=spell(),
+            cast=cast(target="John"),
+            canonical_target="John",
+            cooldowns=all_available(*actions),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.phrase_prefix == "Polymorph"
+
+    def test_explicit_empty_prefix_disables(self):
+        # phrase_prefix: "" explicitly disables the spell-name prefix.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label}",
+                "do": "{action.id}",
+                "phrase_prefix": "",
+            }],
+        })
+        actions = [action("bop", label="BOP", spell_id=1022)]
+        eng.set_class_actions(actions)
+        ctx = RuleDecisionContext(
+            spell=spell(),
+            cast=cast(target="John"),
+            canonical_target="John",
+            cooldowns=all_available(*actions),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.phrase_prefix == ""
+
+    def test_custom_prefix_template_renders(self):
+        # A custom phrase_prefix template (e.g. "URGENT {spell}") renders.
+        eng = engine_with_rules({
+            "on_cast": {"spell_id": "poly"},
+            "priorities": [{
+                "category": "defensive",
+                "say": "{action.label}",
+                "do": "{action.id}",
+                "phrase_prefix": "URGENT {spell}",
+            }],
+        })
+        actions = [action("bop", label="BOP", spell_id=1022)]
+        eng.set_class_actions(actions)
+        ctx = RuleDecisionContext(
+            spell=spell(),
+            cast=cast(target="John"),
+            canonical_target="John",
+            cooldowns=all_available(*actions),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.phrase_prefix == "URGENT Polymorph"
 
 
 class TestTargetRoleSpecificity:

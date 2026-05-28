@@ -1,7 +1,8 @@
 """Template-match a cropped cooldown-icon bbox against the local icon DB.
 
-The icon DB is a flat directory `config/icons/<spell_id>.png` — one PNG
-per WoW spell ID that any loaded class library references. Calibration
+The icon DB is a flat directory of `<spell_id>.png` files (the user-data
+icons dir) — one PNG per WoW spell ID that any loaded class library
+references. Calibration
 hands each detected icon's bbox to `IconMatcher.match(crop)`; the
 matcher returns the best-scoring spell_id (or None if every reference
 scores below threshold).
@@ -55,9 +56,24 @@ _INTERIOR_FRACTION = 0.7
 
 
 class IconMatcher:
-    def __init__(self, icon_dir: Path, threshold: float = 0.7):
+    def __init__(
+        self,
+        icon_dir: Path,
+        threshold: float = 0.7,
+        allowed_spell_ids: set[int] | None = None,
+    ):
+        """Match crops against the local icon DB.
+
+        `allowed_spell_ids` restricts the loaded reference set — used
+        for the class-restricted second pass so e.g. mistweaver
+        calibrations don't match against paladin-labeled icons.
+        Default (None) loads every PNG in `icon_dir`.
+        """
         self.icon_dir = Path(icon_dir)
         self.threshold = threshold
+        self._allowed = (
+            set(allowed_spell_ids) if allowed_spell_ids is not None else None
+        )
         # spell_id -> reference BGR ndarray, already center-cropped.
         self._references: dict[int, np.ndarray] = {}
         self._load()
@@ -77,14 +93,17 @@ class IconMatcher:
             except ValueError:
                 logger.debug("Skipping non-numeric icon filename: %s", path)
                 continue
+            if self._allowed is not None and spell_id not in self._allowed:
+                continue
             img = cv2.imread(str(path), cv2.IMREAD_COLOR)
             if img is None:
                 logger.warning("Could not decode icon at %s; skipping", path)
                 continue
             self._references[spell_id] = _interior_crop(img)
+        scope = "all" if self._allowed is None else f"restricted to {len(self._allowed)} spells"
         logger.info(
-            "IconMatcher loaded %d reference icons from %s",
-            len(self._references), self.icon_dir,
+            "IconMatcher loaded %d reference icons from %s (%s)",
+            len(self._references), self.icon_dir, scope,
         )
 
     def __len__(self) -> int:
