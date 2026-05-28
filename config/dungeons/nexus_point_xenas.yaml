@@ -210,7 +210,7 @@ spells:
     name: "Dark Beckoning"
     aliases: ["Dark Beckoning", "Dark Beckonlng", "Dark Beck0ning"]
     severity: danger
-    phrase: DEFENSIVE DARK BECKONING
+    phrase: GROUP WIDE DAMAGE DARK BECKONING
     cast_by: mob
     school: shadow
     interruptible: false

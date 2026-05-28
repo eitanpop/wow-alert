@@ -55,12 +55,8 @@ actions:
     spell_id: 1044
 
   # ---- Party/raid-wide defensives ----
-  - id: devotion_aura
-    label: "Devotion Aura"
-    category: defensive
-    scope: party_wide
-    spell_id: 465
-
+  # Aura Mastery is the only activatable party-wide DR. (Devotion Aura is
+  # a passive aura/stance, not a cooldown, so it isn't listed.)
   - id: aura_mastery
     label: "Aura Mastery"
     category: defensive
