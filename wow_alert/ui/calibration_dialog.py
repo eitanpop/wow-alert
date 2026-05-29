@@ -22,6 +22,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QRadioButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -84,19 +86,22 @@ class CalibrationDialog(QDialog):
 
         self._cal = cal
         self._source = source_frame
-        # (member_index, QLineEdit, QComboBox) — we keep indices rather than
-        # copying PartyMember objects so bbox + identity stay tied to the
-        # original detection. The combo holds the role selector.
-        self._member_rows: list[tuple[int, QLineEdit, QComboBox]] = []
+        # (member_index, QLineEdit, QComboBox, QRadioButton) — we keep indices
+        # rather than copying PartyMember objects so bbox + identity stay tied
+        # to the original detection. The combo is the role selector; the radio
+        # marks which member is the player ("Me").
+        self._member_rows: list[tuple[int, QLineEdit, QComboBox, QRadioButton]] = []
+        # Exclusive group so exactly one row can be marked "Me" (or none).
+        self._me_group = QButtonGroup(self)
+        self._me_group.setExclusive(True)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
+        # The dungeon is chosen in the main window's top-level picker, not
+        # here — this dialog only edits party + class/spec + the "Me" marker.
         form = QFormLayout()
-        self._dungeon_edit = QLineEdit(cal.dungeon_name or "")
-        self._dungeon_edit.setPlaceholderText("e.g. Mists of Tirna Scithe")
-        form.addRow("Dungeon:", self._dungeon_edit)
 
         # Class / spec dropdowns. Class drives the spec list — selecting
         # paladin shows holy/protection/retribution; switching to monk
@@ -132,6 +137,12 @@ class CalibrationDialog(QDialog):
         root.addWidget(self._make_section_label(
             f"Party members ({len(cal.party_members)} detected)"
         ))
+        # The "Me" column marks which member is the player, so the engine can
+        # tell a cast on you from one on a teammate (→ self defensive). Pick
+        # the row matching your character.
+        hint = QLabel("Mark yourself with “Me” so self-defensive calls work.")
+        hint.setStyleSheet("color: gray;")
+        root.addWidget(hint)
         root.addWidget(self._build_member_list())
 
         root.addWidget(self._make_section_label(
@@ -149,26 +160,31 @@ class CalibrationDialog(QDialog):
         """Build a new Calibration from the edited field values. Call only
         after the dialog was accepted."""
         edited_members: list[PartyMember] = []
-        for idx, name_edit, role_combo in self._member_rows:
+        player_name: str | None = None
+        for idx, name_edit, role_combo, me_radio in self._member_rows:
             original = self._cal.party_members[idx]
             name = name_edit.text().strip() or None
             role = role_combo.currentData()  # None for "(unknown)", else the lowercase token
             edited_members.append(
                 PartyMember(name=name, role=role, bbox=original.bbox)
             )
+            if me_radio.isChecked():
+                player_name = name  # the (possibly edited) name of the "Me" row
 
-        dungeon = self._dungeon_edit.text().strip() or None
         player_class = self._class_combo.currentData()
         player_spec = self._spec_combo.currentData()
 
         # deepcopy to preserve cooldown_icons / notes / calibrated_at without
         # mutating the original (the caller may want to compare before/after).
+        # dungeon_name is preserved from the calibration (set upstream from
+        # the top-level picker), not edited here.
         return Calibration(
             party_members=edited_members,
             cooldown_icons=deepcopy(self._cal.cooldown_icons),
-            dungeon_name=dungeon,
+            dungeon_name=self._cal.dungeon_name,
             player_class=player_class,
             player_spec=player_spec,
+            player_name=player_name,
             notes=self._cal.notes,
             calibrated_at=self._cal.calibrated_at,
         )
@@ -259,7 +275,16 @@ class CalibrationDialog(QDialog):
         role_combo.setFixedWidth(100)
         layout.addWidget(role_combo)
 
-        self._member_rows.append((idx, name_edit, role_combo))
+        # "Me" marker — exclusive across all rows. Pre-checked when this
+        # member's name matches the saved player name.
+        me_radio = QRadioButton("Me")
+        if member.name and self._cal.player_name and \
+                member.name.strip().lower() == self._cal.player_name.strip().lower():
+            me_radio.setChecked(True)
+        self._me_group.addButton(me_radio)
+        layout.addWidget(me_radio)
+
+        self._member_rows.append((idx, name_edit, role_combo, me_radio))
         return row
 
     def _crop_pixmap(self, bbox: tuple[int, int, int, int]) -> QPixmap | None:

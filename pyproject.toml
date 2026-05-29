@@ -17,6 +17,8 @@ pywin32 = {version = "^311", markers = "sys_platform == 'win32'"}
 pyside6 = "^6.8.0"
 rapidocr-onnxruntime = "^1.4.0"
 pyttsx3 = "^2.98"
+edge-tts = "^7.2"
+miniaudio = "^1.71"
 pydantic = "^2.9.0"
 pyyaml = "^6.0"
 rapidfuzz = "^3.10.0"

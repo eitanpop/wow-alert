@@ -6,7 +6,7 @@
 #
 # Spell schema (authoritative: wow_alert/events.py:Spell):
 #   id / name / aliases / severity / phrase / duration / cast_by /
-#   school / interruptible / notes
+#   school / interruptible / tags / notes
 #
 # Dispel note: the tracker tags several effects "via Freedom" (a snare/
 # root Blessing of Freedom or Tiger's Lust clears) and "via Stoneform/
@@ -23,6 +23,7 @@ spells:
 
   # ---- Arcane Sentry / Arcanotron Custos (shared cast) ----
   - id: mt_ethereal_shackles
+    tags: [snare]
     name: "Ethereal Shackles"
     aliases: ["Ethereal Shackles", "Ethereai Shackles", "Ethereal Shackies"]
     severity: danger
@@ -44,6 +45,7 @@ spells:
     notes: "Arcane Sentry avoidable ground beam."
 
   - id: mt_crowd_dispersal
+    tags: [big_damage_party]
     name: "Crowd Dispersal"
     aliases: ["Crowd Dispersal", "Crowd Dispersai"]
     severity: danger
@@ -55,6 +57,7 @@ spells:
 
   # ---- Arcane Magister ----
   - id: mt_arcane_bolt
+    tags: [interrupt]
     name: "Arcane Bolt"
     aliases: ["Arcane Bolt", "Arcane Boit", "Arcane Boll"]
     severity: danger
@@ -65,6 +68,7 @@ spells:
     notes: "Arcane Magister filler cast. Interrupt."
 
   - id: mt_polymorph
+    tags: [interrupt]
     name: "Polymorph"
     aliases: ["Polymorph", "Polymorpn", "Poiymorph"]
     severity: danger
@@ -118,6 +122,7 @@ spells:
 
   # ---- Animated Codex ----
   - id: mt_arcane_volley
+    tags: [big_damage_party]
     name: "Arcane Volley"
     aliases: ["Arcane Volley", "Arcane Voiley", "Arcane Voliey"]
     severity: danger
@@ -129,6 +134,7 @@ spells:
 
   # ---- Blazing Pyromancer ----
   - id: mt_ignition
+    tags: [big_damage_party]
     name: "Ignition"
     aliases: ["Ignition", "Ignltion", "Igniti0n"]
     severity: danger
@@ -139,6 +145,7 @@ spells:
     notes: "Blazing Pyromancer group-wide damage plus self-enrage."
 
   - id: mt_pyroblast
+    tags: [interrupt]
     name: "Pyroblast"
     aliases: ["Pyroblast", "Pyrobiast", "Pyroblast"]
     severity: danger
@@ -160,6 +167,7 @@ spells:
 
   # ---- Spellwoven Familiar ----
   - id: mt_blink
+    tags: [big_damage_party]
     name: "Blink"
     aliases: ["Blink", "Biink", "Bllnk"]
     severity: danger
@@ -171,6 +179,7 @@ spells:
 
   # ---- Brightscale Wyrm ----
   - id: mt_energy_release
+    tags: [big_damage_party]
     name: "Energy Release"
     aliases: ["Energy Release", "Energy Reiease", "Energy Releas3"]
     severity: danger
@@ -182,6 +191,7 @@ spells:
 
   # ---- Runed Spellbreaker ----
   - id: mt_runic_glaive
+    tags: [big_damage_party]
     name: "Runic Glaive"
     aliases: ["Runic Glaive", "Runic Giaive", "Runlc Glaive"]
     severity: danger
@@ -213,6 +223,7 @@ spells:
     notes: "Shadowrift Voidcaller summons adds."
 
   - id: mt_consuming_shadows
+    tags: [big_damage_party]
     name: "Consuming Shadows"
     aliases: ["Consuming Shadows", "Consumlng Shadows", "Consuming Shad0ws"]
     severity: danger
@@ -224,6 +235,7 @@ spells:
 
   # ---- Unstable Voidling ----
   - id: mt_void_eruption
+    tags: [big_damage_party]
     name: "Void Eruption"
     aliases: ["Void Eruption", "Vold Eruption", "Void Erupti0n"]
     severity: danger
@@ -267,6 +279,7 @@ spells:
 
   # ---- Dreaded Voidwalker ----
   - id: mt_shadow_bolt
+    tags: [interrupt]
     name: "Shadow Bolt"
     aliases: ["Shadow Bolt", "Shadow Boit", "Shad0w Bolt"]
     severity: danger
@@ -288,6 +301,7 @@ spells:
     notes: "Void Terror debuff."
 
   - id: mt_terror_wave
+    tags: [interrupt]
     name: "Terror Wave"
     aliases: ["Terror Wave", "Terror Wav3", "Terr0r Wave"]
     severity: danger
@@ -299,6 +313,7 @@ spells:
 
   # ========================= ARCANOTRON CUSTOS =========================
   - id: mt_repulsing_slam
+    tags: [big_damage_single]
     name: "Repulsing Slam"
     aliases: ["Repulsing Slam", "Repuising Slam", "Repulsing Siam"]
     severity: danger
@@ -309,6 +324,7 @@ spells:
     notes: "Arcanotron Custos tank hit with a knock-up."
 
   - id: mt_arcane_expulsion
+    tags: [big_damage_party]
     name: "Arcane Expulsion"
     aliases: ["Arcane Expulsion", "Arcane Expuision", "Arcane Expulsi0n"]
     severity: danger
@@ -319,6 +335,7 @@ spells:
     notes: "Arcanotron Custos party damage; avoidable ground with knock-up."
 
   - id: mt_refueling_protocol
+    tags: [big_damage_party]
     name: "Refueling Protocol"
     aliases: ["Refueling Protocol", "Refueling Protocoi", "Refuellng Protocol"]
     severity: danger
@@ -340,6 +357,7 @@ spells:
 
   # ========================= SERANEL SUNLASH =========================
   - id: mt_runic_mark
+    tags: [big_damage_party]
     name: "Runic Mark"
     aliases: ["Runic Mark", "Runlc Mark", "Runic Mark"]
     severity: danger
@@ -360,6 +378,7 @@ spells:
     notes: "Seranel Sunlash avoidable ground zone."
 
   - id: mt_null_reaction
+    tags: [big_damage_party]
     name: "Null Reaction"
     aliases: ["Null Reaction", "Nuli Reaction", "Null Reacti0n"]
     severity: danger
@@ -370,6 +389,7 @@ spells:
     notes: "Seranel Sunlash party damage; avoidable ground; CC; non-physical debuff."
 
   - id: mt_hastening_ward
+    tags: [big_damage_single]
     name: "Hastening Ward"
     aliases: ["Hastening Ward", "Hastenlng Ward", "Hastening Werd"]
     severity: danger
@@ -380,6 +400,7 @@ spells:
     notes: "Seranel Sunlash self-buff that increases tank damage taken."
 
   - id: mt_wave_of_silence
+    tags: [big_damage_party]
     name: "Wave of Silence"
     aliases: ["Wave of Silence", "Wave of Siience", "Wav3 of Silence"]
     severity: danger
@@ -401,6 +422,7 @@ spells:
     notes: "Gemellus spawns additional copies."
 
   - id: mt_cosmic_sting
+    tags: [big_damage_party]
     name: "Cosmic Sting"
     aliases: ["Cosmic Sting", "Cosmlc Sting", "Cosmic Stlng"]
     severity: danger
@@ -421,6 +443,7 @@ spells:
     notes: "Gemellus self-buff; non-physical debuff link."
 
   - id: mt_astral_grasp
+    tags: [big_damage_party]
     name: "Astral Grasp"
     aliases: ["Astral Grasp", "Astrai Grasp", "Astral Grasp"]
     severity: danger
@@ -432,6 +455,7 @@ spells:
 
   # ============================= DEGENTRIUS =============================
   - id: mt_entropy_blast
+    tags: [big_damage_single]
     name: "Entropy Blast"
     aliases: ["Entropy Blast", "Entropy Biast", "Entr0py Blast"]
     severity: danger
@@ -452,6 +476,7 @@ spells:
     notes: "Degentrius avoidable ground; CC."
 
   - id: mt_hulking_fragment
+    tags: [big_damage_single]
     name: "Hulking Fragment"
     aliases: ["Hulking Fragment", "Hulklng Fragment", "Hulking Fragmenl"]
     severity: danger
@@ -462,6 +487,7 @@ spells:
     notes: "Degentrius tank hit with a debuff plus avoidable ground."
 
   - id: mt_devouring_entropy
+    tags: [big_damage_party, snare]
     name: "Devouring Entropy"
     aliases: ["Devouring Entropy", "Devourlng Entropy", "Devouring Entr0py"]
     severity: danger
@@ -472,6 +498,7 @@ spells:
     notes: "Degentrius party damage; non-physical debuff; CC. Freedom clears the root component."
 
   - id: mt_unstable_void_essence
+    tags: [big_damage_party]
     name: "Unstable Void Essence"
     aliases: ["Unstable Void Essence", "Unstabie Void Essence", "Unstable Vold Essence"]
     severity: danger
@@ -480,270 +507,3 @@ spells:
     school: shadow
     interruptible: false
     notes: "Degentrius party damage; non-physical debuff."
-
-# ============================== RULES ==============================
-# Class-agnostic: each priority binds whatever the calibrated class
-# library offers; if nothing matches, the engine falls through to the
-# spell's default phrase.
-#
-# Patterns:
-#   interrupt      category: interrupt → kick the caster
-#   tank-external  single_target defensive, lacks_tag aggro_dropping
-#                  (Sac / Cocoon, not BoP — BoP drops threat)
-#   party-wide     party_wide defensive → party_wide heal → spell default
-rules:
-  # ---------------- Interrupts ----------------
-  - on_cast: { spell_id: mt_arcane_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_polymorph }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_pyroblast }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_shadow_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_terror_wave }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Tank busters (boss) ----------------
-  # Mob-cast tank hits (Devouring Strike, Void Gash, the Arcane Sentry
-  # Ethereal Shackles) are left as plain alerts — externals are saved
-  # for boss hits.
-  - on_cast: { spell_id: mt_repulsing_slam }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_hastening_ward }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_entropy_blast }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_hulking_fragment }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Party-wide damage ----------------
-  # party-wide defensive → party-wide heal → spell default phrase.
-  - on_cast: { spell_id: mt_crowd_dispersal }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_arcane_volley }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_ignition }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_blink }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_energy_release }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_runic_glaive }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_consuming_shadows }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_void_eruption }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_arcane_expulsion }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_refueling_protocol }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_runic_mark }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_null_reaction }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_wave_of_silence }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_cosmic_sting }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_astral_grasp }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_devouring_entropy }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: mt_unstable_void_essence }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"

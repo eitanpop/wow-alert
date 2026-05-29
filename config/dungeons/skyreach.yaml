@@ -6,7 +6,7 @@
 #
 # Spell schema (authoritative: wow_alert/events.py:Spell):
 #   id / name / aliases / severity / phrase / duration / cast_by /
-#   school / interruptible / notes
+#   school / interruptible / tags / notes
 #
 # Dispel note: the tracker tags effects "stoneform/shadowmeld" (racial
 # self-cleanses); none are healer dispels, so no dispel rules are
@@ -21,6 +21,7 @@ spells:
 
   # ---- Soaring Chakram Master ----
   - id: skyreach_ricocheting_chakram
+    tags: [big_damage_party]
     name: "Ricocheting Chakram"
     aliases: ["Ricocheting Chakram", "Ricochetlng Chakram", "Ricocheting Chakrarn"]
     severity: danger
@@ -53,6 +54,7 @@ spells:
     notes: "Raging Squall tank hit with a self-buff."
 
   - id: skyreach_wrathful_wind
+    tags: [big_damage_party]
     name: "Wrathful Wind"
     aliases: ["Wrathful Wind", "Wrathfui Wind", "Wrathful Wlnd"]
     severity: danger
@@ -74,6 +76,7 @@ spells:
 
   # ---- Driving Gale-Caller ----
   - id: skyreach_repel
+    tags: [interrupt, big_damage_party]
     name: "Repel"
     aliases: ["Repel", "Repei", "Repell"]
     severity: danger
@@ -95,6 +98,7 @@ spells:
     notes: "Adorned Bladetalon tank hit."
 
   - id: skyreach_blade_rush
+    tags: [big_damage_party]
     name: "Blade Rush"
     aliases: ["Blade Rush", "Biade Rush", "Blade Rusn"]
     severity: danger
@@ -106,6 +110,7 @@ spells:
 
   # ---- Dread Raven ----
   - id: skyreach_dire_screech
+    tags: [big_damage_party]
     name: "Dire Screech"
     aliases: ["Dire Screech", "Dlre Screech", "Dire Screecn"]
     severity: danger
@@ -117,6 +122,7 @@ spells:
 
   # ---- Blinding Sun Priestess ----
   - id: skyreach_blinding_light
+    tags: [interrupt]
     name: "Blinding Light"
     aliases: ["Blinding Light", "Blindlng Light", "Blinding Llght"]
     severity: danger
@@ -127,6 +133,7 @@ spells:
     notes: "Blinding Sun Priestess cast. Interrupt; non-physical."
 
   - id: skyreach_solar_barrier
+    tags: [big_damage_party]
     name: "Solar Barrier"
     aliases: ["Solar Barrier", "Solar Barrler", "Soiar Barrier"]
     severity: danger
@@ -149,6 +156,7 @@ spells:
 
   # ---- Initiate of the Rising Sun ----
   - id: skyreach_solar_bolt
+    tags: [interrupt]
     name: "Solar Bolt"
     aliases: ["Solar Bolt", "Solar Boit", "Soiar Bolt"]
     severity: danger
@@ -170,6 +178,7 @@ spells:
     notes: "Solar Elemental avoidable ground effect."
 
   - id: skyreach_solar_orb
+    tags: [big_damage_party]
     name: "Solar Orb"
     aliases: ["Solar Orb", "Solar 0rb", "Soiar Orb"]
     severity: danger
@@ -213,6 +222,7 @@ spells:
 
   # ============================== RANJIT ==============================
   - id: skyreach_gale_surge
+    tags: [big_damage_party]
     name: "Gale Surge"
     aliases: ["Gale Surge", "Gaie Surge", "Gale Surg3"]
     severity: danger
@@ -223,6 +233,7 @@ spells:
     notes: "Ranjit group-wide damage; avoidable, CC."
 
   - id: skyreach_fan_of_blades
+    tags: [big_damage_party]
     name: "Fan of Blades"
     aliases: ["Fan of Blades", "Fan of Biades", "Fan 0f Blades"]
     severity: danger
@@ -264,6 +275,7 @@ spells:
     notes: "Araknath defensive self-buff."
 
   - id: skyreach_blast_wave
+    tags: [big_damage_party]
     name: "Blast Wave"
     aliases: ["Blast Wave", "Biast Wave", "Blast Wav3"]
     severity: danger
@@ -284,6 +296,7 @@ spells:
     notes: "Araknath frontal cone; non-physical."
 
   - id: skyreach_energize
+    tags: [big_damage_party]
     name: "Energize"
     aliases: ["Energize", "Energlze", "Energiz3"]
     severity: danger
@@ -304,6 +317,7 @@ spells:
     notes: "Araknath frontal cone."
 
   - id: skyreach_supernova
+    tags: [big_damage_party]
     name: "Supernova"
     aliases: ["Supernova", "Supernove", "Supern0va"]
     severity: danger
@@ -315,6 +329,7 @@ spells:
 
   # ============================== RUKHRAN ==============================
   - id: skyreach_screech
+    tags: [big_damage_party]
     name: "Screech"
     aliases: ["Screech", "Screecn", "Scre ech"]
     severity: danger
@@ -325,6 +340,7 @@ spells:
     notes: "Rukhran group-wide damage."
 
   - id: skyreach_burning_claws
+    tags: [big_damage_single]
     name: "Burning Claws"
     aliases: ["Burning Claws", "Burnlng Claws", "Burning Ciaws"]
     severity: danger
@@ -335,6 +351,7 @@ spells:
     notes: "Rukhran tank hit; non-physical."
 
   - id: skyreach_sunbreak
+    tags: [big_damage_party]
     name: "Sunbreak"
     aliases: ["Sunbreak", "Sunbreek", "Sunbreak"]
     severity: danger
@@ -356,6 +373,7 @@ spells:
 
   # ========================= HIGH SAGE VIRYX =========================
   - id: skyreach_scorching_ray
+    tags: [big_damage_party]
     name: "Scorching Ray"
     aliases: ["Scorching Ray", "Scorchlng Ray", "Scorching Rav"]
     severity: danger
@@ -366,6 +384,7 @@ spells:
     notes: "High Sage Viryx group-wide damage; non-physical."
 
   - id: skyreach_solar_blast
+    tags: [interrupt]
     name: "Solar Blast"
     aliases: ["Solar Blast", "Solar Biast", "Soiar Blast"]
     severity: danger
@@ -394,216 +413,3 @@ spells:
     school: fire
     interruptible: false
     notes: "High Sage Viryx avoidable ground; non-physical."
-
-# ============================== RULES ==============================
-# Class-agnostic: each priority binds whatever the calibrated class
-# library offers; if nothing matches, the engine falls through to the
-# spell's default phrase.
-#
-# Patterns:
-#   interrupt      category: interrupt → kick the caster
-#   tank-external  single_target defensive, lacks_tag aggro_dropping
-#                  (Sac / Cocoon, not BoP — BoP drops threat)
-#   party-wide     party_wide defensive → party_wide heal → spell default
-rules:
-  # ---------------- Interrupts ----------------
-  - on_cast: { spell_id: skyreach_blinding_light }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_solar_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_solar_blast }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # Interruptible cast that also pulses the group — kick first, otherwise
-  # soften with a raid defensive / heal.
-  - on_cast: { spell_id: skyreach_repel }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  # ---------------- Tank busters (boss) ----------------
-  # Trash tank hits (Shear, Wind Claws, Fiery Talon) are left as plain
-  # alerts — externals are saved for boss hits.
-  - on_cast: { spell_id: skyreach_burning_claws }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Party-wide damage ----------------
-  # party-wide defensive → party-wide heal → spell default phrase.
-  - on_cast: { spell_id: skyreach_ricocheting_chakram }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_wrathful_wind }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_blade_rush }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_dire_screech }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_solar_barrier }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_solar_orb }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_gale_surge }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_fan_of_blades }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_blast_wave }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_energize }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_supernova }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_screech }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_sunbreak }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: skyreach_scorching_ray }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"

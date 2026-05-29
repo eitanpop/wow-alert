@@ -24,10 +24,8 @@ from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -389,10 +387,10 @@ class _RegionEditor(QWidget):
 class RegionConfirmDialog(QDialog):
     """Modal dialog wrapping a `_RegionEditor`.
 
-    Returns the user-confirmed regions and dungeon name via the
-    `result_regions()` method. The dialog itself doesn't touch
-    `Calibration` or invoke the LLM — its only job is collecting
-    user-confirmed bounding boxes + a dungeon string.
+    Returns the user-confirmed regions via `result_regions()`. The dialog
+    doesn't touch `Calibration` or invoke the LLM — its only job is
+    collecting the party + cooldown bounding boxes. (The dungeon is chosen
+    in the main window's top-level picker, not here.)
     """
 
     def __init__(
@@ -400,7 +398,6 @@ class RegionConfirmDialog(QDialog):
         image_bgr: np.ndarray,
         party_region: tuple[int, int, int, int] | None,
         cooldown_region: tuple[int, int, int, int] | None,
-        dungeon_name: str | None,
         parent=None,
     ):
         super().__init__(parent)
@@ -445,11 +442,6 @@ class RegionConfirmDialog(QDialog):
         zoom_bar.addWidget(self._zoom_label)
         zoom_bar.addStretch(1)
 
-        form = QFormLayout()
-        self._dungeon_edit = QLineEdit(dungeon_name or "")
-        self._dungeon_edit.setPlaceholderText("e.g. Mists of Tirna Scithe")
-        form.addRow("Dungeon:", self._dungeon_edit)
-
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -462,7 +454,6 @@ class RegionConfirmDialog(QDialog):
         layout.addWidget(instructions)
         layout.addLayout(zoom_bar)
         layout.addWidget(self._editor, stretch=1)
-        layout.addLayout(form)
         layout.addWidget(buttons)
 
     def _on_zoom_changed(self, zoom: float) -> None:
@@ -473,10 +464,8 @@ class RegionConfirmDialog(QDialog):
     ) -> tuple[
         tuple[int, int, int, int] | None,
         tuple[int, int, int, int] | None,
-        str | None,
     ]:
         return (
             self._editor.get_region(_PARTY),
             self._editor.get_region(_COOLDOWN),
-            self._dungeon_edit.text().strip() or None,
         )

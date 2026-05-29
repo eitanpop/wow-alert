@@ -52,8 +52,14 @@ class Priority(BaseModel):
         priority. The bound action becomes available to templates as
         {action.label} and {action.id}.
 
-      - Cast filters: target_role / target_present. These check the
-        cast itself and fail the priority if not satisfied.
+      - Cast filters: target_role / lacks_target_role / target_is_self /
+        target_present / school. These check the cast itself and fail the
+        priority if not satisfied. lacks_target_role only passes when the
+        target's role is known and differs — an unknown role fails it, so an
+        aggro-dropping external is never offered to a target that might be
+        the tank. target_is_self compares the target to the configured
+        player name; with no player name set it reads as "not self", so
+        self-targeted priorities stay dormant until a name is configured.
 
     All set fields must pass (AND). A priority with no condition fields
     is the catch-all.
@@ -66,8 +72,12 @@ class Priority(BaseModel):
     lacks_tag: str | None = None
 
     # Cast filters.
-    target_role: str | None = None       # "tank" | "healer" | "dps"
+    target_role: str | None = None       # require the target to play this role
+    lacks_target_role: str | None = None  # require the target to NOT play this role
+    target_is_self: bool | None = None   # require the target to be (true) / not be
+                                         # (false) the player's own character
     target_present: bool | None = None   # require / forbid canonical_target
+    school: str | None = None            # match the cast's school, e.g. "physical"
 
     # Output.
     say: str = Field(

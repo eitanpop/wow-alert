@@ -113,6 +113,24 @@ class AppConfig(BaseModel):
         ),
     )
 
+    tts_engine: str = Field(
+        default="edge",
+        description=(
+            "TTS backend for alert audio. 'edge' = Microsoft Edge neural "
+            "voices (edge-tts) — natural-sounding, needs internet at "
+            "prerender time. 'pyttsx' = offline Windows SAPI voice (robotic "
+            "but no network). Falls back to spell phrases either way."
+        ),
+    )
+    tts_voice: str = Field(
+        default="en-US-AriaNeural",
+        description=(
+            "edge-tts voice name (ignored when tts_engine='pyttsx'). Examples: "
+            "en-US-AriaNeural, en-US-GuyNeural, en-GB-SoniaNeural. Full list: "
+            "`edge-tts --list-voices`."
+        ),
+    )
+
     tts_cache_dir: Path = Field(
         default_factory=lambda: TTS_CACHE_DIR,
         description=(

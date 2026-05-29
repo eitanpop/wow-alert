@@ -31,6 +31,7 @@ from wow_alert.rule_schema import (
     Priority,
     Rule,
 )
+from wow_alert.tag_rules import TagRules
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,21 @@ class RuleEngine:
     def __init__(self):
         self._rules: list[Rule] = []
         self._class_actions: list[ClassAction] = []
+        self._tag_rules: TagRules = TagRules()
+        self._suggestions_enabled: bool = True
+
+    def set_suggestions_enabled(self, value: bool) -> None:
+        """Toggle cooldown recommendations. When False, decide() skips the
+        rule/tag walk entirely and every cast emits its default phrase Alert
+        — pure alert mode, no 'press this' callouts."""
+        self._suggestions_enabled = bool(value)
+        logger.info("Rule engine suggestions enabled: %s", self._suggestions_enabled)
+
+    def set_tag_rules(self, table: TagRules) -> None:
+        """Set the global tag → priority table. Used to resolve a cast's
+        recommendation from its `tags` when no per-spell rule overrides it."""
+        self._tag_rules = table
+        logger.info("Rule engine holds tag rules for %d tags", len(table.tags))
 
     def set_rules(self, raw_rules: list[dict]) -> None:
         """Parse and store rules. Bad entries are skipped with a warning
@@ -283,19 +299,39 @@ class RuleEngine:
         if spell.severity == Severity.IGNORE:
             return None
 
+        # Suggestions off → pure alert mode: skip all rule/tag logic, just
+        # play the spell's phrase. Honors the user's UI toggle.
+        if not self._suggestions_enabled:
+            return self._default_alert(ctx, spell)
+
         # Inject engine-held state when the caller didn't supply it.
         # Frozen dataclass → use `replace` to substitute.
         if not ctx.class_actions and self._class_actions:
             ctx = replace(ctx, class_actions=self._class_actions)
 
-        # Rules first, most-specific (with target_role filter) winning.
-        for rule in self._matching_rules(ctx):
-            for prio in rule.priorities:
+        # Priority source: a per-spell rule overrides the tag table (the
+        # bespoke escape hatch); otherwise the cast's tags resolve through
+        # the global table. A per-spell rule may be split across several
+        # entries (target_role specificity), so iterate matching rules;
+        # the tag path produces a single flat list.
+        matching = self._matching_rules(ctx)
+        if matching:
+            priority_lists = (rule.priorities for rule in matching)
+        else:
+            priority_lists = (self._tag_rules.priorities_for(spell.tags),)
+        for priorities in priority_lists:
+            for prio in priorities:
                 result = self._eval_priority(prio, ctx)
                 if result.matched:
                     return self._build_output(prio, ctx, spell, result.bindings)
 
-        # No rule fired — fall back to the spell's default Alert.
+        # Nothing bound — fall back to the spell's default Alert.
+        return self._default_alert(ctx, spell)
+
+    @staticmethod
+    def _default_alert(ctx: RuleDecisionContext, spell: Spell) -> "Alert":
+        """The spell's plain phrase Alert — used both as the no-rule-fired
+        fallback and as the whole output when suggestions are disabled."""
         target_str = f" on {ctx.cast.target}" if ctx.cast.target else ""
         duration_str = (
             f" ({ctx.cast.duration:.1f}s)" if ctx.cast.duration is not None else ""
@@ -346,8 +382,8 @@ class RuleEngine:
              A failure here fails the priority outright; the bound
              action is exposed to templates as {action.label} /
              {action.id}.
-          2. Cast filters (target_role, target_present). Each is
-             checked only when set.
+          2. Cast filters (target_role, lacks_target_role, target_is_self,
+             target_present, school). Each is checked only when set.
         """
         bindings: dict = {}
 
@@ -364,9 +400,32 @@ class RuleEngine:
             if actual is None or actual != prio.target_role:
                 return _MatchResult(False)
 
+        if prio.lacks_target_role is not None:
+            # Fail-closed: only pass when the role is known and differs, so
+            # an aggro-dropping external never lands on a possible tank.
+            if not ctx.canonical_target:
+                return _MatchResult(False)
+            actual = ctx.roles.get(ctx.canonical_target)
+            if actual is None or actual == prio.lacks_target_role:
+                return _MatchResult(False)
+
+        if prio.target_is_self is not None:
+            # "Is this cast on the player?" Compare the resolved target to the
+            # configured player name. Unknown (no name set, or no target) reads
+            # as not-self, so self steps stay dormant and other-target steps
+            # keep working unchanged.
+            target = ctx.canonical_target or ctx.cast.target or ""
+            is_self = bool(ctx.player_name) and target.strip().lower() == ctx.player_name.strip().lower()
+            if is_self != prio.target_is_self:
+                return _MatchResult(False)
+
         if prio.target_present is not None:
             has_target = bool(ctx.canonical_target or ctx.cast.target)
             if has_target != prio.target_present:
+                return _MatchResult(False)
+
+        if prio.school is not None:
+            if (ctx.spell.school or "").lower() != prio.school.lower():
                 return _MatchResult(False)
 
         return _MatchResult(True, bindings)

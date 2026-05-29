@@ -104,6 +104,10 @@ class RuleDecisionContext:
     # role wasn't identified during calibration are absent — a missing
     # entry means "unknown", not "this member isn't a tank/healer/dps".
     roles: dict[str, str] = field(default_factory=dict)
+    # The player's own character name, when configured at calibration. Lets
+    # a priority's `target_is_self` filter tell a cast on the player from one
+    # on a teammate. None when unset — self-targeted priorities never fire.
+    player_name: str | None = None
     # The current player's action catalog. Populated by the rule engine if
     # the caller doesn't supply one (engine holds them in shared state for
     # the hot path). Listed here so tests can construct a context with
@@ -182,8 +186,18 @@ class Spell(BaseModel):
         default=None,
         description="Free-text reminder for human readers.",
     )
+    tags: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Mechanic tags that drive the recommendation (e.g. 'interrupt', "
+            "'big_damage_single', 'big_damage_party', 'snare', 'dodge'). The rule "
+            "engine resolves these against the global tag-rules table to pick "
+            "a cooldown; the spell's identity doesn't matter, only its tags. "
+            "A per-dungeon `rules` entry, if present, overrides the tags."
+        ),
+    )
 
-    @field_validator("aliases", "cast_by", mode="before")
+    @field_validator("aliases", "cast_by", "tags", mode="before")
     @classmethod
     def _scalar_to_list(cls, v: Any) -> Any:
         """Accept a bare string where a list is expected.

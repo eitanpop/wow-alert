@@ -12,13 +12,15 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, QThread, Slot
+from PySide6.QtCore import QSettings, Qt, QThread, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSlider,
     QVBoxLayout,
@@ -27,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from typing import Callable
 
-from wow_alert.audio import PyttsxWinsoundAlertPlayer
+from wow_alert.audio import EdgeTtsAlertPlayer, PyttsxWinsoundAlertPlayer
 from wow_alert.calibration import (
     Calibration,
     CooldownIcon,
@@ -38,6 +40,7 @@ from wow_alert.calibration import (
 from wow_alert.class_library import infer_class_spec, load_class_actions
 from wow_alert.config import REPO_ROOT
 from wow_alert.cooldown_watcher import CooldownWatcher
+from wow_alert.dungeon_loader import list_dungeon_names, slugify
 from wow_alert.events import Alert
 from wow_alert.icon_matcher import IconMatcher
 from wow_alert.paths import CALIBRATION_ARTIFACTS_DIR, CALIBRATION_PATH, ICONS_DIR
@@ -51,6 +54,20 @@ from wow_alert.ui.region_confirm_dialog import RegionConfirmDialog
 
 logger = logging.getLogger(__name__)
 
+# Curated edge-tts English neural voices for the dropdown. Not exhaustive —
+# `edge-tts --list-voices` shows the full set, and a persisted voice outside
+# this list is added to the dropdown at runtime so it stays selectable.
+_EDGE_VOICES = [
+    ("Aria (US, female)", "en-US-AriaNeural"),
+    ("Jenny (US, female)", "en-US-JennyNeural"),
+    ("Guy (US, male)", "en-US-GuyNeural"),
+    ("Christopher (US, male)", "en-US-ChristopherNeural"),
+    ("Sonia (UK, female)", "en-GB-SoniaNeural"),
+    ("Ryan (UK, male)", "en-GB-RyanNeural"),
+    ("Natasha (AU, female)", "en-AU-NatashaNeural"),
+    ("William (AU, male)", "en-AU-WilliamNeural"),
+]
+
 
 class MainWindow(QMainWindow):
     def __init__(
@@ -59,6 +76,8 @@ class MainWindow(QMainWindow):
         alert_player: PyttsxWinsoundAlertPlayer,
         show_preview: bool = True,
         on_calibration_apply: Callable[[Calibration], None] | None = None,
+        on_dungeon_select: Callable[[str | None], None] | None = None,
+        on_clear_calibration: Callable[[str | None], None] | None = None,
         cooldown_watcher: CooldownWatcher | None = None,
     ):
         super().__init__()
@@ -68,6 +87,13 @@ class MainWindow(QMainWindow):
         self._worker = worker
         self._alert_player = alert_player
         self._on_calibration_apply = on_calibration_apply
+        # Loads a dungeon's spells + prerenders its phrases — the callouts
+        # path, usable without calibrating. Run on a background thread on
+        # change since the prerender hits the network (edge-tts).
+        self._on_dungeon_select = on_dungeon_select
+        # Resets the recommendation layer (class/roster/roles/player) to
+        # nothing, keeping the dungeon callouts.
+        self._on_clear_calibration = on_clear_calibration
         self._cooldown_watcher = cooldown_watcher
 
         self.frame_widget = FrameWidget()
@@ -108,6 +134,14 @@ class MainWindow(QMainWindow):
         self._calibration_thread: QThread | None = None
         self._calibration_runner: BackgroundRunner | None = None
         self._calibration: Calibration | None = None
+        # Voice re-render plumbing (Apply button). Separate from calibration
+        # so a voice render doesn't block / interfere with calibrate state.
+        self._voice_thread: QThread | None = None
+        self._voice_runner: BackgroundRunner | None = None
+        # Dungeon-load plumbing (top-level picker). Its own thread refs so a
+        # dungeon swap + prerender doesn't tangle with calibrate/voice state.
+        self._dungeon_thread: QThread | None = None
+        self._dungeon_runner: BackgroundRunner | None = None
         # Per-run state for the two-phase flow (frame stays valid across the
         # region-confirm dialog so pass-2/3 uses the same image pass-1 saw).
         self._calibration_frame: np.ndarray | None = None
@@ -128,6 +162,10 @@ class MainWindow(QMainWindow):
         existing = load_calibration(CALIBRATION_PATH)
         if existing is not None:
             self._apply_calibration(existing, persist=False, log_to_pane=False)
+        # Initialize the dungeon picker: reflect the calibrated dungeon if one
+        # loaded, else load the last-picked dungeon so callouts work with no
+        # calibration at all.
+        self._init_dungeon_selection()
 
     def _build_controls(self, show_preview: bool) -> None:
         self._controls_layout = QHBoxLayout()
@@ -153,6 +191,27 @@ class MainWindow(QMainWindow):
         self._preview_cb.setChecked(show_preview)
         self._preview_cb.toggled.connect(self._on_preview_toggle)
 
+        # Suggestions toggle, persisted across sessions via QSettings. Off =
+        # the engine skips all cooldown recommendations and every cast just
+        # plays its alert phrase.
+        suggestions_on = QSettings("wow-alert", "wow-alert").value(
+            "suggestions_enabled", True, type=bool
+        )
+        self._suggestions_cb = QCheckBox("Suggestions")
+        self._suggestions_cb.setToolTip(
+            "Recommend cooldowns (Sac, Aura Mastery, …). Off = just play the "
+            "spell's alert phrase, no 'press this' callouts."
+        )
+        self._suggestions_cb.setChecked(suggestions_on)
+        self._suggestions_cb.toggled.connect(self._on_suggestions_toggle)
+        # Apply the saved state now: setChecked() emits no signal when the
+        # initial value matches the box's default, so push it explicitly or a
+        # saved "off" wouldn't take effect (the engine defaults to enabled).
+        self._worker.set_suggestions_enabled(suggestions_on)
+
+        self._voice_combo = self._build_voice_combo()
+        self._dungeon_combo = self._build_dungeon_combo()
+
         self._debug_cb = QCheckBox("Debug")
         self._debug_cb.setChecked(True)
         self._debug_cb.toggled.connect(self._on_debug_toggle)
@@ -160,20 +219,125 @@ class MainWindow(QMainWindow):
         self._calibrate_btn = QPushButton("Calibrate")
         self._calibrate_btn.clicked.connect(self._on_calibrate_clicked)
 
+        self._clear_cal_btn = QPushButton("Clear calibration")
+        self._clear_cal_btn.setToolTip(
+            "Forget the saved calibration and drop cooldown recommendations. "
+            "Your dungeon callouts stay. Recalibrate anytime."
+        )
+        self._clear_cal_btn.clicked.connect(self._on_clear_calibration_clicked)
+
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.clicked.connect(self._on_clear_clicked)
 
+        self._controls_layout.addWidget(QLabel("Dungeon:"))
+        self._controls_layout.addWidget(self._dungeon_combo)
+        self._controls_layout.addSpacing(20)
         self._controls_layout.addWidget(conf_label)
         self._controls_layout.addWidget(self._conf_slider)
         self._controls_layout.addWidget(self._conf_value)
         self._controls_layout.addSpacing(20)
         self._controls_layout.addWidget(self._pause_btn)
         self._controls_layout.addWidget(self._alerts_cb)
+        self._controls_layout.addWidget(self._suggestions_cb)
         self._controls_layout.addWidget(self._preview_cb)
         self._controls_layout.addWidget(self._debug_cb)
+        self._apply_voice_btn = QPushButton("Apply")
+        self._apply_voice_btn.setToolTip(
+            "Render the selected voice and switch to it (takes a few seconds)."
+        )
+        self._apply_voice_btn.setEnabled(self._voice_combo.isEnabled())
+        self._apply_voice_btn.clicked.connect(self._on_apply_voice)
+        self._controls_layout.addWidget(QLabel("Voice:"))
+        self._controls_layout.addWidget(self._voice_combo)
+        self._controls_layout.addWidget(self._apply_voice_btn)
         self._controls_layout.addWidget(self._calibrate_btn)
+        self._controls_layout.addWidget(self._clear_cal_btn)
         self._controls_layout.addStretch(1)
         self._controls_layout.addWidget(self._clear_btn)
+
+    def _build_voice_combo(self) -> QComboBox:
+        """Dropdown of edge-tts voices. Disabled when the active player isn't
+        the edge backend. Persists the choice to QSettings; the new voice goes
+        live on the next prerender (Calibrate / startup auto-apply), so the
+        current session keeps the prior voice until then — no audio gap."""
+        combo = QComboBox()
+        is_edge = isinstance(self._alert_player, EdgeTtsAlertPlayer)
+        default_voice = self._alert_player.voice if is_edge else "en-US-AriaNeural"
+        current = QSettings("wow-alert", "wow-alert").value(
+            "tts_voice", default_voice, type=str
+        )
+        voices = list(_EDGE_VOICES)
+        if current not in [v for _, v in voices]:
+            voices.append((current, current))  # keep a non-listed saved voice selectable
+        for label, voice_id in voices:
+            combo.addItem(label, userData=voice_id)
+        idx = combo.findData(current)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        if not is_edge:
+            combo.setEnabled(False)
+            combo.setToolTip("Set tts_engine: edge in your config to use neural voices.")
+            return combo
+        combo.setToolTip(
+            "edge-tts neural voice. Applies on the next Calibrate; current "
+            "audio keeps the prior voice until then."
+        )
+        # Persisted pref differs from how cli built the player → repoint now so
+        # the startup auto-apply prerenders the saved voice. Runtime changes go
+        # through the Apply button, not on every dropdown change.
+        if current != self._alert_player.voice:
+            self._alert_player.set_voice(current)
+        return combo
+
+    def _build_dungeon_combo(self) -> QComboBox:
+        """Top-level dungeon picker. Selecting one loads its spell DB and
+        prerenders its callout phrases — the whole callouts path, no
+        calibration needed. Populated from the authored dungeons so a pick
+        always resolves to a real file. Selection/loading is wired up in
+        _init_dungeon_selection (after any saved calibration loads)."""
+        combo = QComboBox()
+        combo.setToolTip(
+            "Pick a dungeon to get cast-bar callouts. Calibrate (optional) "
+            "layers cooldown recommendations on top."
+        )
+        combo.addItem("(none)", userData=None)
+        for name in list_dungeon_names(REPO_ROOT / "config"):
+            combo.addItem(name, userData=name)
+        combo.currentIndexChanged.connect(self._on_dungeon_changed)
+        return combo
+
+    def _init_dungeon_selection(self) -> None:
+        """Set the picker's initial value once startup state is known. A
+        calibrated dungeon is reflected without reloading (calibration already
+        loaded it); otherwise the last-picked dungeon is loaded so callouts
+        work with no calibration."""
+        settings = QSettings("wow-alert", "wow-alert")
+        cal_dungeon = self._calibration.dungeon_name if self._calibration else None
+        if cal_dungeon:
+            self._select_dungeon_in_combo(cal_dungeon, block=True)
+            settings.setValue("dungeon", cal_dungeon)
+            return
+        saved = settings.value("dungeon", "", type=str)
+        if saved:
+            # Not blocked → fires _on_dungeon_changed → background load.
+            self._select_dungeon_in_combo(saved, block=False)
+
+    def _select_dungeon_in_combo(self, name: str, *, block: bool) -> bool:
+        """Select the combo entry whose name slugs to `name`. With block=True
+        the change signal is suppressed (no reload). Returns whether a match
+        was found."""
+        target = slugify(name)
+        for i in range(self._dungeon_combo.count()):
+            data = self._dungeon_combo.itemData(i)
+            if data and slugify(data) == target:
+                if block:
+                    self._dungeon_combo.blockSignals(True)
+                    self._dungeon_combo.setCurrentIndex(i)
+                    self._dungeon_combo.blockSignals(False)
+                else:
+                    self._dungeon_combo.setCurrentIndex(i)
+                return True
+        return False
 
     def start(self) -> None:
         self._thread.start()
@@ -213,6 +377,115 @@ class MainWindow(QMainWindow):
         self.log_widget.info(f"preview {'on' if checked else 'off'}")
 
     @Slot(bool)
+    def _on_suggestions_toggle(self, checked: bool) -> None:
+        self._worker.set_suggestions_enabled(checked)
+        QSettings("wow-alert", "wow-alert").setValue("suggestions_enabled", checked)
+        self.log_widget.info(
+            f"suggestions {'on' if checked else 'off'}"
+            + ("" if checked else " — alert phrases only, no cooldown recs")
+        )
+
+    @Slot()
+    def _on_apply_voice(self) -> None:
+        """Render the dropdown's selected voice in the background and switch to
+        it. The current voice's clips keep playing until the render finishes,
+        so there's no silent gap; only an explicit click triggers the work."""
+        if not isinstance(self._alert_player, EdgeTtsAlertPlayer):
+            return
+        if self._voice_thread is not None:
+            self.log_widget.info("voice render already in progress")
+            return
+        voice = self._voice_combo.currentData()
+        if not voice:
+            return
+        QSettings("wow-alert", "wow-alert").setValue("tts_voice", voice)
+        self._alert_player.set_voice(voice)
+        phrases = self._alert_player.known_phrases()
+        self._apply_voice_btn.setEnabled(False)
+        self._voice_combo.setEnabled(False)
+        self.log_widget.info(f"rendering voice {voice}… ({len(phrases)} clips)")
+
+        thread = QThread(self)
+        runner = BackgroundRunner(lambda: self._alert_player.prerender(phrases))
+        runner.moveToThread(thread)
+        thread.started.connect(runner.run)
+        runner.completed.connect(self._on_voice_render_done)
+        runner.failed.connect(self._on_voice_render_failed)
+        runner.completed.connect(thread.quit)
+        runner.failed.connect(thread.quit)
+        thread.finished.connect(self._clear_voice_refs)
+        thread.finished.connect(runner.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._voice_thread = thread
+        self._voice_runner = runner
+        thread.start()
+
+    @Slot(object)
+    def _on_voice_render_done(self, _result) -> None:
+        self._apply_voice_btn.setEnabled(True)
+        self._voice_combo.setEnabled(True)
+        self.log_widget.info(f"voice ready: {self._alert_player.voice}")
+
+    @Slot(str)
+    def _on_voice_render_failed(self, message: str) -> None:
+        self._apply_voice_btn.setEnabled(True)
+        self._voice_combo.setEnabled(True)
+        self.log_widget.error(
+            f"voice render failed: {message} — keeping the prior clips"
+        )
+
+    @Slot()
+    def _clear_voice_refs(self) -> None:
+        self._voice_thread = None
+        self._voice_runner = None
+
+    @Slot(int)
+    def _on_dungeon_changed(self, index: int) -> None:
+        """Load the picked dungeon (spells + phrase prerender) on a background
+        thread so the network prerender doesn't freeze the UI. Persists the
+        choice; the current spell set keeps working until the swap lands."""
+        if self._on_dungeon_select is None:
+            return
+        if self._dungeon_thread is not None:
+            self.log_widget.info("dungeon load already in progress")
+            return
+        dungeon = self._dungeon_combo.currentData()
+        QSettings("wow-alert", "wow-alert").setValue("dungeon", dungeon or "")
+        self._dungeon_combo.setEnabled(False)
+        self.log_widget.info(f"loading dungeon {dungeon or '(none)'}…")
+
+        thread = QThread(self)
+        runner = BackgroundRunner(lambda: self._on_dungeon_select(dungeon))
+        runner.moveToThread(thread)
+        thread.started.connect(runner.run)
+        runner.completed.connect(self._on_dungeon_load_done)
+        runner.failed.connect(self._on_dungeon_load_failed)
+        runner.completed.connect(thread.quit)
+        runner.failed.connect(thread.quit)
+        thread.finished.connect(self._clear_dungeon_refs)
+        thread.finished.connect(runner.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._dungeon_thread = thread
+        self._dungeon_runner = runner
+        thread.start()
+
+    @Slot(object)
+    def _on_dungeon_load_done(self, _result) -> None:
+        self._dungeon_combo.setEnabled(True)
+        dungeon = self._dungeon_combo.currentData()
+        self.log_widget.info(f"dungeon ready: {dungeon or '(none)'}")
+
+    @Slot(str)
+    def _on_dungeon_load_failed(self, message: str) -> None:
+        self._dungeon_combo.setEnabled(True)
+        self.log_widget.error(f"dungeon load failed: {message}")
+
+    @Slot()
+    def _clear_dungeon_refs(self) -> None:
+        self._dungeon_thread = None
+        self._dungeon_runner = None
+
+    @Slot(bool)
     def _on_debug_toggle(self, checked: bool) -> None:
         self.log_widget.set_show_debug(checked)
         self.log_widget.info(f"debug {'on' if checked else 'off'}")
@@ -220,6 +493,32 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_clear_clicked(self) -> None:
         self.log_widget.clear()
+
+    @Slot()
+    def _on_clear_calibration_clicked(self) -> None:
+        """Forget the saved calibration + drop recommendations, keeping the
+        dungeon callouts. Confirmed because it deletes saved data (though
+        it's fully recoverable by recalibrating)."""
+        reply = QMessageBox.question(
+            self,
+            "Clear calibration",
+            "Forget the saved calibration and drop cooldown recommendations?\n\n"
+            "Your dungeon callouts stay. You can recalibrate anytime.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            CALIBRATION_PATH.unlink(missing_ok=True)
+        except OSError as exc:
+            self.log_widget.error(f"couldn't delete saved calibration file: {exc}")
+        self._calibration = None
+        if self._cooldown_watcher is not None:
+            self._cooldown_watcher.set_icons([])
+        if self._on_clear_calibration is not None:
+            self._on_clear_calibration(self._dungeon_combo.currentData())
+        self._calibration_status.setText("Not calibrated")
+        self.log_widget.info("calibration cleared — callouts only (dungeon kept)")
 
     @Slot(object)
     def _on_alert(self, alert: Alert) -> None:
@@ -272,9 +571,6 @@ class MainWindow(QMainWindow):
         through to the editor's centered-rectangle default."""
         party_region = self._derive_region_from_prior("party")
         cooldown_region = self._derive_region_from_prior("cooldown")
-        dungeon_name = (
-            self._calibration.dungeon_name if self._calibration else None
-        )
         if party_region or cooldown_region:
             self._calibration_status.setText("Calibrating… confirm regions")
             self.log_widget.info(
@@ -290,7 +586,6 @@ class MainWindow(QMainWindow):
             image_bgr=frame,
             party_region=party_region,
             cooldown_region=cooldown_region,
-            dungeon_name=dungeon_name,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -298,7 +593,9 @@ class MainWindow(QMainWindow):
             self._finish_calibration_flow(success=False)
             return
 
-        party_region, cooldown_region, dungeon_name = dialog.result_regions()
+        party_region, cooldown_region = dialog.result_regions()
+        # The dungeon comes from the top-level picker — the single source.
+        dungeon_name = self._dungeon_combo.currentData()
         self._calibration_status.setText("Calibrating… reading party + icons")
         self.log_widget.info("calibrating: reading party names + finding icons")
         self._start_runner(
@@ -652,8 +949,9 @@ class MainWindow(QMainWindow):
         if log_to_pane:
             roster = ", ".join(cal.roster()) or "(no party members detected)"
             dungeon_str = f" dungeon={cal.dungeon_name!r}" if cal.dungeon_name else ""
+            you_str = f" you={cal.player_name!r}" if cal.player_name else " you=(name unset)"
             self.log_widget.info(
-                f"calibrated:{dungeon_str} {len(cal.party_members)} party members "
+                f"calibrated:{dungeon_str}{you_str} {len(cal.party_members)} party members "
                 f"[{roster}], {len(cal.cooldown_icons)} cooldown icons"
             )
             if cal.notes:

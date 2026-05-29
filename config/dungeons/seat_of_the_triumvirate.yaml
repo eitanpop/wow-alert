@@ -6,7 +6,7 @@
 #
 # Spell schema (authoritative: wow_alert/events.py:Spell):
 #   id / name / aliases / severity / phrase / duration / cast_by /
-#   school / interruptible / notes
+#   school / interruptible / tags / notes
 #
 # Dispel note: the tracker tags effects "blessing-of-freedom" (snare/root
 # that Freedom or Tiger's Lust clears) and "stoneform/shadowmeld" (racial
@@ -22,6 +22,7 @@ dungeon: "Seat of the Triumvirate"
 spells:
   # ===================== SHARED / MERGED CASTS =====================
   - id: sott_rupture
+    tags: [big_damage_party]
     name: "Rupture"
     aliases: ["Rupture", "Ruptur3", "Rupiure"]
     severity: danger
@@ -45,6 +46,7 @@ spells:
 
   # ---- Merciless Subjugator ----
   - id: sott_chains_of_subjugation
+    tags: [big_damage_party, snare]
     name: "Chains of Subjugation"
     aliases: ["Chains of Subjugation", "Chains of Subjugatlon", "Chalns of Subjugation"]
     severity: danger
@@ -87,6 +89,7 @@ spells:
 
   # ---- Dark Conjuror ----
   - id: sott_umbral_bolt
+    tags: [interrupt]
     name: "Umbral Bolt"
     aliases: ["Umbral Bolt", "Umbrai Bolt", "Umbral Boit"]
     severity: danger
@@ -97,6 +100,7 @@ spells:
     notes: "Dark Conjuror filler cast. Interrupt."
 
   - id: sott_summon_voidcaller
+    tags: [interrupt]
     name: "Summon Voidcaller"
     aliases: ["Summon Voidcaller", "Summon Voidcalier", "Summon Voldcaller"]
     severity: danger
@@ -108,6 +112,7 @@ spells:
 
   # ---- Bound Voidcaller ----
   - id: sott_pulsing_void
+    tags: [big_damage_party]
     name: "Pulsing Void"
     aliases: ["Pulsing Void", "Pulslng Void", "Pulsing Vold"]
     severity: danger
@@ -119,6 +124,7 @@ spells:
 
   # ---- Rift Warden ----
   - id: sott_stabilize
+    tags: [big_damage_party]
     name: "Stabilize"
     aliases: ["Stabilize", "Stabiiize", "Stabillze"]
     severity: danger
@@ -139,6 +145,7 @@ spells:
     notes: "Rift Warden single-target debuff (Stoneform counter)."
 
   - id: sott_rift_tear
+    tags: [big_damage_party]
     name: "Rift Tear"
     aliases: ["Rift Tear", "Rlft Tear", "Rift Tsar"]
     severity: danger
@@ -160,6 +167,7 @@ spells:
     notes: "Ruthless Riftstalker single-target debuff. Important."
 
   - id: sott_shadowmend
+    tags: [interrupt]
     name: "Shadowmend"
     aliases: ["Shadowmend", "Shadowrnend", "Shad0wmend"]
     severity: danger
@@ -203,6 +211,7 @@ spells:
 
   # ---- Dire Voidbender ----
   - id: sott_abyssal_enhancement
+    tags: [interrupt, big_damage_party]
     name: "Abyssal Enhancement"
     aliases: ["Abyssal Enhancement", "Abyssai Enhancement", "Abyssal Enhancemenl"]
     severity: danger
@@ -214,6 +223,7 @@ spells:
 
   # ---- Void-Infused Destroyer ----
   - id: sott_eruption
+    tags: [big_damage_party]
     name: "Eruption"
     aliases: ["Eruption", "Erupti0n", "Eruptlon"]
     severity: danger
@@ -246,6 +256,7 @@ spells:
 
   # ===================== ZURAAL THE ASCENDED =====================
   - id: sott_void_slash
+    tags: [big_damage_single]
     name: "Void Slash"
     aliases: ["Void Slash", "Vold Slash", "Void Siash"]
     severity: danger
@@ -276,6 +287,7 @@ spells:
     notes: "Zuraal the Ascended frontal cone."
 
   - id: sott_oozing_slam
+    tags: [big_damage_party]
     name: "Oozing Slam"
     aliases: ["Oozing Slam", "Oozlng Slam", "Oozing Siam"]
     severity: danger
@@ -286,6 +298,7 @@ spells:
     notes: "Zuraal the Ascended group-wide damage; spawns adds."
 
   - id: sott_crashing_void
+    tags: [big_damage_party]
     name: "Crashing Void"
     aliases: ["Crashing Void", "Crashlng Void", "Crashing Vold"]
     severity: danger
@@ -297,6 +310,7 @@ spells:
 
   # ============================= SAPRISH =============================
   - id: sott_rending_void
+    tags: [big_damage_single]
     name: "Rending Void"
     aliases: ["Rending Void", "Rendlng Void", "Rending Vold"]
     severity: danger
@@ -307,6 +321,7 @@ spells:
     notes: "Saprish tank hit with a self-buff."
 
   - id: sott_dread_screech
+    tags: [interrupt, big_damage_party]
     name: "Dread Screech"
     aliases: ["Dread Screech", "Dread Screecn", "Dread Screcch"]
     severity: danger
@@ -337,6 +352,7 @@ spells:
     notes: "Saprish avoidable ground; non-physical."
 
   - id: sott_phase_dash
+    tags: [big_damage_party]
     name: "Phase Dash"
     aliases: ["Phase Dash", "Phase Dasn", "Pnase Dash"]
     severity: danger
@@ -347,6 +363,7 @@ spells:
     notes: "Saprish group-wide damage; avoidable."
 
   - id: sott_overload
+    tags: [big_damage_party]
     name: "Overload"
     aliases: ["Overload", "0verload", "Overioad"]
     severity: danger
@@ -358,6 +375,7 @@ spells:
 
   # ========================== VICEROY NEZHAR ==========================
   - id: sott_mind_blast
+    tags: [interrupt]
     name: "Mind Blast"
     aliases: ["Mind Blast", "Mlnd Blast", "Mind Biast"]
     severity: danger
@@ -368,6 +386,7 @@ spells:
     notes: "Viceroy Nezhar interruptible tank-hit cast. Interrupt to prevent it."
 
   - id: sott_mass_void_infusion
+    tags: [big_damage_party]
     name: "Mass Void Infusion"
     aliases: ["Mass Void Infusion", "Mass Vold Infusion", "Mass Void Infusi0n"]
     severity: danger
@@ -378,6 +397,7 @@ spells:
     notes: "Viceroy Nezhar group-wide damage (Shadowmeld counter)."
 
   - id: sott_umbral_tentacles
+    tags: [big_damage_party]
     name: "Umbral Tentacles"
     aliases: ["Umbral Tentacles", "Umbrai Tentacles", "Umbral Tentacies"]
     severity: danger
@@ -388,6 +408,7 @@ spells:
     notes: "Viceroy Nezhar group-wide damage; spawns adds."
 
   - id: sott_collapsing_void
+    tags: [big_damage_party]
     name: "Collapsing Void"
     aliases: ["Collapsing Void", "Collapslng Void", "Collapsing Vold"]
     severity: danger
@@ -399,6 +420,7 @@ spells:
 
   # ============================== L'URA ==============================
   - id: sott_dirge_of_despair
+    tags: [big_damage_party]
     name: "Dirge of Despair"
     aliases: ["Dirge of Despair", "Dirge of Despalr", "Dlrge of Despair"]
     severity: danger
@@ -419,6 +441,7 @@ spells:
     notes: "L'ura avoidable effect."
 
   - id: sott_discordant_beam
+    tags: [big_damage_party]
     name: "Discordant Beam"
     aliases: ["Discordant Beam", "Discordant Bearn", "Dlscordant Beam"]
     severity: danger
@@ -439,6 +462,7 @@ spells:
     notes: "L'ura avoidable; non-physical."
 
   - id: sott_abyssal_lance
+    tags: [big_damage_single]
     name: "Abyssal Lance"
     aliases: ["Abyssal Lance", "Abyssai Lance", "Abyssal Lanc3"]
     severity: danger
@@ -459,6 +483,7 @@ spells:
     notes: "L'ura self-buff."
 
   - id: sott_backlash
+    tags: [big_damage_party]
     name: "Backlash"
     aliases: ["Backlash", "Backiash", "Backlasn"]
     severity: danger
@@ -467,274 +492,3 @@ spells:
     school: shadow
     interruptible: false
     notes: "L'ura group-wide damage with a CC effect."
-
-# ============================== RULES ==============================
-# Class-agnostic: each priority binds whatever the calibrated class
-# library offers; if nothing matches, the engine falls through to the
-# spell's default phrase.
-#
-# Patterns:
-#   interrupt      category: interrupt → kick the caster
-#   tank-external  single_target defensive, lacks_tag aggro_dropping
-#                  (Sac / Cocoon, not BoP — BoP drops threat)
-#   party-wide     party_wide defensive → party_wide heal → spell default
-rules:
-  # ---------------- Interrupts ----------------
-  - on_cast: { spell_id: sott_umbral_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_summon_voidcaller }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_shadowmend }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_mind_blast }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # Interruptible casts that also pulse the group — kick first, otherwise
-  # soften with a raid defensive / heal.
-  - on_cast: { spell_id: sott_dread_screech }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_abyssal_enhancement }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  # ---------------- Tank busters (boss) ----------------
-  # Trash tank hits (Relentless Pursuit, Void Bash) are left as plain
-  # alerts — externals are saved for boss hits.
-  - on_cast: { spell_id: sott_void_slash }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_rending_void }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_abyssal_lance }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Party-wide damage ----------------
-  # party-wide defensive → party-wide heal → spell default phrase.
-  - on_cast: { spell_id: sott_rupture }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_chains_of_subjugation }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_pulsing_void }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_stabilize }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_rift_tear }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_eruption }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_oozing_slam }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_crashing_void }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_phase_dash }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_overload }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_mass_void_infusion }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_umbral_tentacles }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_collapsing_void }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_dirge_of_despair }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_discordant_beam }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: sott_backlash }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"

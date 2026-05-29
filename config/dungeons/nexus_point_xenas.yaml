@@ -6,7 +6,11 @@
 #
 # Spell schema (authoritative: wow_alert/events.py:Spell):
 #   id / name / aliases / severity / phrase / duration / cast_by /
-#   school / interruptible / notes
+#   school / interruptible / tags / notes
+#
+# `tags` are the mechanic tags that drive the recommendation through the
+# global table in config/tag_rules.yaml (interrupt, stop, big_damage_single,
+# big_damage_party, ...). An untagged cast is alert-only (its phrase).
 #
 # Dispel note: the tracker tags effects "via Freedom" (snare/root that
 # Blessing of Freedom or Tiger's Lust clears), "via Stoneform/Shadowmeld"
@@ -24,6 +28,7 @@ spells:
   # ===================== SHARED / MERGED CASTS =====================
   # Corewright Arcanist (trash) and Chief Corewright Kasreth (boss).
   - id: nexus_arcane_zap
+    tags: [big_damage_single]
     name: "Arcane Zap"
     aliases: ["Arcane Zap", "Arcane Zep", "Arcane Z ap"]
     severity: danger
@@ -101,6 +106,7 @@ spells:
     notes: "Corewright Arcanist single-target debuff (Stoneform counter)."
 
   - id: nexus_arcane_explosion
+    tags: [interrupt]
     name: "Arcane Explosion"
     aliases: ["Arcane Explosion", "Arcane Expiosion", "Arcane Explosi0n"]
     severity: danger
@@ -112,10 +118,11 @@ spells:
 
   # ---- Hollowsoul Scrounger ----
   - id: nexus_leech_veil
+    tags: [stop]
     name: "Leech Veil"
     aliases: ["Leech Veil", "Leech Veii", "Le ech Veil"]
     severity: danger
-    phrase: STOP LEECH VEIL
+    phrase: CC LEECH VEIL
     cast_by: mob
     school: shadow
     interruptible: false
@@ -123,6 +130,7 @@ spells:
 
   # ---- Flux Engineer ----
   - id: nexus_mana_battery
+    tags: [big_damage_party]
     name: "Mana Battery"
     aliases: ["Mana Battery", "Mana Batterv", "Mana Battary"]
     severity: danger
@@ -133,10 +141,11 @@ spells:
     notes: "Flux Engineer group-wide damage."
 
   - id: nexus_suppression_field
+    tags: [snare]
     name: "Suppression Field"
     aliases: ["Suppression Field", "Suppresslon Field", "Suppression Fieid"]
     severity: info
-    phrase: DODGE SUPPRESSION
+    phrase: DODGE SUPPRESSION SNARE
     cast_by: mob
     school: arcane
     interruptible: false
@@ -144,6 +153,7 @@ spells:
 
   # ---- Nexus Adept ----
   - id: nexus_umbra_bolt
+    tags: [interrupt]
     name: "Umbra Bolt"
     aliases: ["Umbra Bolt", "Umbra Boit", "Umbra Boll"]
     severity: danger
@@ -165,6 +175,7 @@ spells:
     notes: "Circuit Seer avoidable ground effect."
 
   - id: nexus_arcing_mana
+    tags: [big_damage_party]
     name: "Arcing Mana"
     aliases: ["Arcing Mana", "Arclng Mana", "Arcing Mena"]
     severity: danger
@@ -186,6 +197,7 @@ spells:
 
   # ---- Cursed Voidcaller ----
   - id: nexus_creeping_void
+    tags: [big_damage_party]
     name: "Creeping Void"
     aliases: ["Creeping Void", "Creeplng Void", "Creeping Vold"]
     severity: danger
@@ -207,6 +219,7 @@ spells:
     notes: "Duskfright Herald single-target debuff (Shadowmeld counter)."
 
   - id: nexus_dark_beckoning
+    tags: [big_damage_party]
     name: "Dark Beckoning"
     aliases: ["Dark Beckoning", "Dark Beckonlng", "Dark Beck0ning"]
     severity: danger
@@ -218,6 +231,7 @@ spells:
 
   # ---- Grand Nullifier ----
   - id: nexus_nullify
+    tags: [interrupt]
     name: "Nullify"
     aliases: ["Nullify", "Nulilfy", "Nulllfy"]
     severity: danger
@@ -270,6 +284,7 @@ spells:
     notes: "Null Sentinel tank hit."
 
   - id: nexus_dreadbellow
+    tags: [big_damage_party]
     name: "Dreadbellow"
     aliases: ["Dreadbellow", "Dreadbeliow", "Dreadbel low"]
     severity: danger
@@ -303,6 +318,7 @@ spells:
 
   # ---- Lightwrought ----
   - id: nexus_holy_bolt
+    tags: [interrupt]
     name: "Holy Bolt"
     aliases: ["Holy Bolt", "Holy Boit", "Hoiy Bolt"]
     severity: danger
@@ -313,6 +329,7 @@ spells:
     notes: "Lightwrought missile cast. Interrupt."
 
   - id: nexus_burning_radiance
+    tags: [big_damage_party]
     name: "Burning Radiance"
     aliases: ["Burning Radiance", "Burnlng Radiance", "Burning Radlance"]
     severity: danger
@@ -366,6 +383,7 @@ spells:
     notes: "Chief Corewright Kasreth single-target debuff with a CC effect."
 
   - id: nexus_corespark_detonation
+    tags: [big_damage_party]
     name: "Corespark Detonation"
     aliases: ["Corespark Detonation", "Corespark Detonati0n", "Corespark Detonatlon"]
     severity: danger
@@ -377,6 +395,7 @@ spells:
 
   # ===================== COREWARDEN NYSARRA =====================
   - id: nexus_umbral_lash
+    tags: [big_damage_single]
     name: "Umbral Lash"
     aliases: ["Umbral Lash", "Umbrai Lash", "Umbral Lasn"]
     severity: danger
@@ -387,6 +406,7 @@ spells:
     notes: "Corewarden Nysarra tank hit with a CC effect."
 
   - id: nexus_eclipsing_step
+    tags: [big_damage_party]
     name: "Eclipsing Step"
     aliases: ["Eclipsing Step", "Eclipslng Step", "Eclipsing St3p"]
     severity: danger
@@ -417,6 +437,7 @@ spells:
     notes: "Corewarden Nysarra frontal cone with a CC effect."
 
   - id: nexus_lightscar_flare
+    tags: [big_damage_party]
     name: "Lightscar Flare"
     aliases: ["Lightscar Flare", "Lightscar Fiare", "Llghtscar Flare"]
     severity: danger
@@ -427,6 +448,7 @@ spells:
     notes: "Corewarden Nysarra group-wide frontal damage."
 
   - id: nexus_devour_the_unworthy
+    tags: [big_damage_party]
     name: "Devour the Unworthy"
     aliases: ["Devour the Unworthy", "Devour the Unworthv", "Dev0ur the Unworthy"]
     severity: danger
@@ -438,6 +460,7 @@ spells:
 
   # ========================== LOTHRAXION ==========================
   - id: nexus_brilliant_dispersion
+    tags: [big_damage_party]
     name: "Brilliant Dispersion"
     aliases: ["Brilliant Dispersion", "Brililant Dispersion", "Brilliant Dispersi0n"]
     severity: danger
@@ -468,6 +491,7 @@ spells:
     notes: "Lothraxion frontal cone."
 
   - id: nexus_divine_guile
+    tags: [interrupt, big_damage_party]
     name: "Divine Guile"
     aliases: ["Divine Guile", "Divlne Guile", "Divine Guiie"]
     severity: danger
@@ -478,6 +502,7 @@ spells:
     notes: "Lothraxion group-wide damage. Interrupt; otherwise use a raid defensive."
 
   - id: nexus_core_exposure
+    tags: [big_damage_party]
     name: "Core Exposure"
     aliases: ["Core Exposure", "Core Exp0sure", "Core Expos ure"]
     severity: danger
@@ -486,219 +511,3 @@ spells:
     school: arcane
     interruptible: false
     notes: "Lothraxion group-wide damage with a debuff."
-
-# ============================== RULES ==============================
-# Class-agnostic: each priority binds whatever the calibrated class
-# library offers; if nothing matches, the engine falls through to the
-# spell's default phrase.
-#
-# Patterns:
-#   interrupt      category: interrupt → kick the caster
-#   stop           category: stop → cc (knockback/stun the channel)
-#   tank-external  single_target defensive, lacks_tag aggro_dropping
-#                  (Sac / Cocoon, not BoP — BoP drops threat)
-#   party-wide     party_wide defensive → party_wide heal → spell default
-rules:
-  # ---------------- Interrupts ----------------
-  - on_cast: { spell_id: nexus_arcane_explosion }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_umbra_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_nullify }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_holy_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # Interruptible boss cast that also pulses the group — kick first,
-  # otherwise soften with a raid defensive / heal.
-  - on_cast: { spell_id: nexus_divine_guile }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  # ---------------- Stop (CC the channel, not a kick) ----------------
-  - on_cast: { spell_id: nexus_leech_veil }
-    priorities:
-      - category: stop
-        say: "{action.label} the channel"
-        do: "{action.id}"
-      - category: cc
-        say: "{action.label} the caster"
-        do: "{action.id}"
-
-  # ---------------- Tank busters (boss) ----------------
-  # Trash tank hits (Null Sunder, Nullwark Blast, Void Lash) are left as
-  # plain alerts — externals are saved for boss hits.
-  - on_cast: { spell_id: nexus_arcane_zap }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_umbral_lash }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Party-wide damage ----------------
-  # party-wide defensive → party-wide heal → spell default phrase.
-  - on_cast: { spell_id: nexus_mana_battery }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_arcing_mana }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_creeping_void }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_dark_beckoning }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_dreadbellow }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_corespark_detonation }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_eclipsing_step }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_lightscar_flare }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_devour_the_unworthy }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_burning_radiance }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_brilliant_dispersion }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: nexus_core_exposure }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"

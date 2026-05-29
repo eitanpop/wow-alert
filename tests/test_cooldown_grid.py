@@ -17,7 +17,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from wow_alert.cooldown_grid import find_icon_bboxes
+from wow_alert.cooldown_grid import (
+    _cluster_rows,
+    _reconstruct_grid,
+    find_icon_bboxes,
+)
 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -256,3 +260,41 @@ class TestFindIconBboxes:
             assert b[1] < 100
         for b in found[3:]:
             assert b[1] > 100
+
+
+class TestGridReconstruction:
+    """Rebuilding a row from clean detections when a dark background
+    fragments or drops icons."""
+
+    # 15 bboxes from a real failed Nexus calibration: top row has a 41px-wide
+    # fragment at ~2552 and a missing slot at ~2612.
+    _NEXUS_RAW = [
+        (2348, 870, 2404, 926), (2414, 870, 2470, 926), (2480, 870, 2536, 926),
+        (2552, 870, 2593, 926), (2678, 870, 2734, 926),
+        (2348, 936, 2404, 992), (2414, 936, 2470, 992),
+        (2429, 1007, 2459, 1037), (2465, 1007, 2495, 1037),
+        (2501, 1007, 2531, 1037), (2537, 1007, 2567, 1037),
+        (2573, 1007, 2603, 1037), (2609, 1007, 2639, 1037),
+        (2645, 1007, 2675, 1037),
+    ]
+
+    def test_recovers_fragment_and_missing_icon(self):
+        top = _cluster_rows(_reconstruct_grid(self._NEXUS_RAW))[0]
+        assert len(top) == 6  # 5 (one a fragment) + 1 missing → 6 clean cells
+        widths = [b[2] - b[0] for b in top]
+        assert all(w == widths[0] for w in widths)  # uniform width
+        centers = [(b[0] + b[2]) / 2 for b in top]
+        pitches = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+        assert all(abs(p - pitches[0]) <= 1 for p in pitches)  # even spacing
+
+    def test_clean_grid_unchanged(self):
+        # A perfectly-detected 1x4 grid must pass through with the same cells.
+        clean = [(x, 0, x + 50, 50) for x in (0, 60, 120, 180)]
+        out = _reconstruct_grid(clean)
+        assert [(b[0] + b[2]) / 2 for b in out] == [25, 85, 145, 205]
+
+    def test_sparse_row_not_overbuilt(self):
+        # Only 2 icons with a big gap → too few to trust a grid; keep as-is
+        # rather than inventing phantom cells between them.
+        out = _reconstruct_grid([(0, 0, 50, 50), (300, 0, 350, 50)])
+        assert len(out) == 2

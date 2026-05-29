@@ -43,6 +43,7 @@ feature.
 from __future__ import annotations
 
 import logging
+import statistics
 
 import cv2
 import numpy as np
@@ -81,6 +82,17 @@ _MIN_AREA = 300
 # a few pixels at higher resolutions; tight enough that genuinely-
 # adjacent icons (which only ever touch corner-to-corner) aren't merged.
 _OVERLAP_CONTAINED = 0.7
+
+# Grid reconstruction. The cooldown manager is a regular grid, but a dark
+# dungeon background (or dark icon art) fragments some icons into slivers or
+# drops them. Within a row, the cleanly-detected icons of the dominant size
+# define the grid pitch; the row is then rebuilt at that pitch, filling gaps
+# and replacing fragments. A row is only reconstructed when at least this many
+# clean icons agree on a size (fewer = not enough to trust a grid).
+_MIN_CLEAN_FOR_RECON = 3
+# A detected icon counts as "clean" (full-size, not a fragment) when its width
+# is within this fraction of the row's median width.
+_SIZE_TOL = 0.2
 
 
 def find_icon_bboxes(crop_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
@@ -130,10 +142,10 @@ def find_icon_bboxes(crop_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
     # became its own connected component" case (e.g., the dark shield
     # symbol inside a Blessing of Protection icon).
     candidates = _drop_contained(candidates)
-    bboxes = _sort_grid(candidates)
+    bboxes = _reconstruct_grid(candidates)
     logger.info(
-        "cooldown_grid: %d icons detected in %dx%d region",
-        len(bboxes), crop_bgr.shape[1], crop_bgr.shape[0],
+        "cooldown_grid: %d icons after grid reconstruction (%d raw) in %dx%d region",
+        len(bboxes), len(candidates), crop_bgr.shape[1], crop_bgr.shape[0],
     )
     return bboxes
 
@@ -176,14 +188,14 @@ def _drop_contained(
     return out
 
 
-def _sort_grid(
+def _cluster_rows(
     bboxes: list[tuple[int, int, int, int]],
-) -> list[tuple[int, int, int, int]]:
-    """Cluster bboxes into rows by y-center, then sort each row by x.
+) -> list[list[tuple[int, int, int, int]]]:
+    """Group bboxes into rows by y-center.
 
-    Two bboxes belong to the same row when their y-centers are within
-    half the average icon height. This lets a single row of slightly
-    mis-aligned icons cluster correctly.
+    Two bboxes share a row when their y-centers are within half the average
+    icon height. Each returned row is sorted left-to-right; rows are in
+    top-to-bottom order.
     """
     if not bboxes:
         return []
@@ -202,8 +214,57 @@ def _sort_grid(
             last_row.append(b)
         else:
             rows.append([b])
+    return [sorted(row, key=lambda b: b[0]) for row in rows]
 
+
+def _reconstruct_grid(
+    bboxes: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
+    """Rebuild each row onto its regular grid, filling fragments and gaps.
+
+    Returns bboxes in grid order (rows top-to-bottom, left-to-right).
+    """
     out: list[tuple[int, int, int, int]] = []
-    for row in rows:
-        out.extend(sorted(row, key=lambda b: b[0]))
+    for row in _cluster_rows(bboxes):
+        out.extend(_reconstruct_row(row))
     return out
+
+
+def _reconstruct_row(
+    row: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
+    """Snap one row of detections onto an even grid.
+
+    The clean (dominant-width) icons set the pitch — the smallest gap between
+    adjacent icon centers is the true grid pitch, robust to missing icons in
+    between. Cells are then laid from the first to the last clean center. When
+    a row has too few clean icons to trust a grid, it's returned unchanged."""
+    if len(row) < 2:
+        return row
+    median_w = statistics.median(b[2] - b[0] for b in row)
+    clean = [b for b in row if abs((b[2] - b[0]) - median_w) <= _SIZE_TOL * median_w]
+    if len(clean) < _MIN_CLEAN_FOR_RECON:
+        return row
+
+    centers = sorted((b[0] + b[2]) / 2 for b in clean)
+    gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+    gaps = [g for g in gaps if g > 1]
+    if not gaps:
+        return row
+    pitch = min(gaps)  # adjacent icons sit one pitch apart; gaps over missing
+    # icons are multiples of it, so the minimum is the true pitch.
+
+    w = statistics.median(b[2] - b[0] for b in clean)
+    h = statistics.median(b[3] - b[1] for b in clean)
+    yc = statistics.median((b[1] + b[3]) / 2 for b in clean)
+    first, last = centers[0], centers[-1]
+    n = round((last - first) / pitch) + 1
+
+    cells: list[tuple[int, int, int, int]] = []
+    for i in range(n):
+        cx = first + i * pitch
+        cells.append((
+            int(round(cx - w / 2)), int(round(yc - h / 2)),
+            int(round(cx + w / 2)), int(round(yc + h / 2)),
+        ))
+    return cells

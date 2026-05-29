@@ -7,7 +7,7 @@
 #
 # Spell schema (authoritative: wow_alert/events.py:Spell):
 #   id / name / aliases / severity / phrase / duration / cast_by /
-#   school / interruptible / notes
+#   school / interruptible / tags / notes
 #
 # Dispel note: several debuffs here are tagged "via Stoneform/Shadowmeld"
 # on the tracker — those are racial *self*-cleanses, not healer dispels,
@@ -106,6 +106,7 @@ spells:
     notes: "Alpha Eagle frontal cone."
 
   - id: algethar_raging_screech
+    tags: [big_damage_party]
     name: "Raging Screech"
     aliases: ["Raging Screech", "Raging Screecn", "Raglng Screech"]
     severity: danger
@@ -117,6 +118,7 @@ spells:
 
   # ---- Corrupted Manafiend ----
   - id: algethar_surge
+    tags: [interrupt]
     name: "Surge"
     aliases: ["Surge", "Surga"]
     severity: danger
@@ -170,6 +172,7 @@ spells:
 
   # ---- Unruly Textbook ----
   - id: algethar_monotonous_lecture
+    tags: [stop]
     name: "Monotonous Lecture"
     aliases: ["Monotonous Lecture", "Monotonous Lature"]
     severity: danger
@@ -191,6 +194,7 @@ spells:
     notes: "Echoknight avoidable ground effect."
 
   - id: algethar_arcane_smash
+    tags: [big_damage_party]
     name: "Arcane Smash"
     aliases: ["Arcane Smash", "Arcane Smasn"]
     severity: danger
@@ -202,6 +206,7 @@ spells:
 
   # ---- Spectral Invoker ----
   - id: algethar_arcane_bolt
+    tags: [interrupt]
     name: "Arcane Bolt"
     aliases: ["Arcane Bolt", "Arcane Boit", "Arcane Boll"]
     severity: danger
@@ -212,6 +217,7 @@ spells:
     notes: "Spectral Invoker cast. Interrupt."
 
   - id: algethar_mystic_brand
+    tags: [interrupt]
     name: "Mystic Brand"
     aliases: ["Mystic Brand", "Mystlc Brand", "Mystic Brarrd"]
     severity: danger
@@ -223,6 +229,7 @@ spells:
 
   # ========================= OVERGROWN ANCIENT =========================
   - id: algethar_barkbreaker
+    tags: [big_damage_single]
     name: "Barkbreaker"
     aliases: ["Barkbreaker", "Barkbreaker", "Barkbreaker"]
     severity: danger
@@ -243,6 +250,7 @@ spells:
     notes: "Overgrown Ancient avoidable; spawns adds; CC effect."
 
   - id: algethar_branch_out
+    tags: [big_damage_party]
     name: "Branch Out"
     aliases: ["Branch Out", "Branch 0ut", "Branch Oul"]
     severity: danger
@@ -253,6 +261,7 @@ spells:
     notes: "Overgrown Ancient party damage; avoidable; spawns adds."
 
   - id: algethar_healing_touch
+    tags: [interrupt]
     name: "Healing Touch"
     aliases: ["Healing Touch", "Healing Toucn", "Heaiing Touch"]
     severity: danger
@@ -263,6 +272,7 @@ spells:
     notes: "Overgrown Ancient self-heal. Interrupt — high priority kick."
 
   - id: algethar_burst_forth
+    tags: [big_damage_party]
     name: "Burst Forth"
     aliases: ["Burst Forth", "Bursl Forth", "Burst Fortn"]
     severity: danger
@@ -273,6 +283,7 @@ spells:
     notes: "Overgrown Ancient party damage; spawns adds."
 
   - id: algethar_lasher_toxin
+    tags: [big_damage_single]
     name: "Lasher Toxin"
     aliases: ["Lasher Toxin", "Lasher Toxln", "Lasner Toxin"]
     severity: danger
@@ -284,6 +295,7 @@ spells:
 
   # ============================== CRAWTH ==============================
   - id: algethar_savage_peck
+    tags: [big_damage_single]
     name: "Savage Peck"
     aliases: ["Savage Peck", "Savaqe Peck"]
     severity: danger
@@ -294,6 +306,7 @@ spells:
     notes: "Crawth tank hit with a debuff."
 
   - id: algethar_deafening_screech
+    tags: [big_damage_party]
     name: "Deafening Screech"
     aliases: ["Deafening Screech", "Deafenlng Screech"]
     severity: danger
@@ -314,6 +327,7 @@ spells:
     notes: "Crawth frontal cone; CC."
 
   - id: algethar_ruinous_winds
+    tags: [big_damage_party]
     name: "Ruinous Winds"
     aliases: ["Ruinous Winds", "Rulnous Winds"]
     severity: danger
@@ -324,6 +338,7 @@ spells:
     notes: "Crawth party damage; CC."
 
   - id: algethar_firestorm
+    tags: [big_damage_party]
     name: "Firestorm"
     aliases: ["Firestorm", "Flrestorm", "Firestorrn"]
     severity: danger
@@ -345,6 +360,7 @@ spells:
 
   # ============================== VEXAMUS ==============================
   - id: algethar_arcane_orbs
+    tags: [big_damage_party]
     name: "Arcane Orbs"
     aliases: ["Arcane Orbs", "Arcane 0rbs"]
     severity: danger
@@ -365,6 +381,7 @@ spells:
     notes: "Vexamus non-physical debuff."
 
   - id: algethar_arcane_expulsion
+    tags: [big_damage_single]
     name: "Arcane Expulsion"
     aliases: ["Arcane Expulsion", "Arcane Expuision"]
     severity: danger
@@ -375,6 +392,7 @@ spells:
     notes: "Vexamus frontal cone tank hit."
 
   - id: algethar_mana_bombs
+    tags: [big_damage_party]
     name: "Mana Bombs"
     aliases: ["Mana Bombs", "Mana Bornbs"]
     severity: danger
@@ -385,6 +403,7 @@ spells:
     notes: "Vexamus party damage; avoidable; non-physical debuff."
 
   - id: algethar_arcane_fissure
+    tags: [big_damage_party]
     name: "Arcane Fissure"
     aliases: ["Arcane Fissure", "Arcane Flssure"]
     severity: danger
@@ -396,6 +415,7 @@ spells:
 
   # ========================== ECHO OF DORAGOSA ==========================
   - id: algethar_unleash_energy
+    tags: [big_damage_party]
     name: "Unleash Energy"
     aliases: ["Unleash Energy", "Unleasn Energy"]
     severity: danger
@@ -406,6 +426,7 @@ spells:
     notes: "Echo of Doragosa party damage; avoidable."
 
   - id: algethar_overwhelming_power
+    tags: [big_damage_party]
     name: "Overwhelming Power"
     aliases: ["Overwhelming Power", "Overwhelmlng Power"]
     severity: danger
@@ -436,6 +457,7 @@ spells:
     notes: "Echo of Doragosa party damage; avoidable."
 
   - id: algethar_astral_blast
+    tags: [big_damage_single]
     name: "Astral Blast"
     aliases: ["Astral Blast", "Astrai Blast", "Astral Biast"]
     severity: danger
@@ -454,227 +476,3 @@ spells:
     school: arcane
     interruptible: false
     notes: "Echo of Doragosa avoidable; CC."
-
-# ============================== RULES ==============================
-# Class-agnostic: every priority binds whatever the calibrated class
-# library offers. For a class with no matching action the priority
-# fails and the engine falls through to the spell's default phrase.
-#
-# Patterns used:
-#   interrupt        category: interrupt → "Kick <spell>" on the caster
-#   tank-external    single_target defensive, lacks_tag aggro_dropping
-#                    (Sac, not BoP — BoP drops threat); else spell default
-#   party-wide       party_wide defensive → party_wide heal → spell default
-rules:
-  # ---------------- Interrupts ----------------
-  - on_cast: { spell_id: algethar_surge }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_arcane_bolt }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_mystic_brand }
-    priorities:
-      - category: interrupt
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # Overgrown Ancient's self-heal — highest-value kick in the dungeon.
-  - on_cast: { spell_id: algethar_healing_touch }
-    priorities:
-      - category: interrupt
-        say: "{action.label} — stop the heal"
-        do: "{action.id}"
-
-  # ---------------- Stop (CC, not a kick) ----------------
-  - on_cast: { spell_id: algethar_monotonous_lecture }
-    priorities:
-      - category: stop
-        say: "{action.label} the cast"
-        do: "{action.id}"
-      - category: cc
-        say: "{action.label} the caster"
-        do: "{action.id}"
-
-  # ---------------- Tank busters (boss) ----------------
-  # Recommend a non-aggro-dropping single-target external (Sac) on the
-  # tank; otherwise fall through to the "TANK BUSTER" default phrase.
-  - on_cast: { spell_id: algethar_barkbreaker }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_lasher_toxin }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_savage_peck }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_arcane_expulsion }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_astral_blast }
-    priorities:
-      - category: defensive
-        scope: single_target
-        lacks_tag: aggro_dropping
-        say: "{action.label} {target}"
-        do: "{action.id}"
-
-  # ---------------- Party-wide damage ----------------
-  # party-wide defensive → party-wide heal → spell default phrase.
-  - on_cast: { spell_id: algethar_raging_screech }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_arcane_smash }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_branch_out }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_burst_forth }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_deafening_screech }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_ruinous_winds }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_firestorm }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_arcane_orbs }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_mana_bombs }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_arcane_fissure }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_unleash_energy }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-
-  - on_cast: { spell_id: algethar_overwhelming_power }
-    priorities:
-      - category: defensive
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"
-      - category: heal
-        scope: party_wide
-        say: "{action.label}"
-        do: "{action.id}"

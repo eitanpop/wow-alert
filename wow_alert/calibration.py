@@ -174,8 +174,20 @@ class Calibration(BaseModel):
     dungeon_name: str | None = None
     player_class: str | None = None
     player_spec: str | None = None
+    # The player's own character name. Used to detect when a cast targets
+    # the player (vs a teammate), so rules can recommend a self defensive.
+    # User-entered in the calibration dialog; the LLM doesn't read it.
+    player_name: str | None = None
     notes: str = ""
     calibrated_at: datetime = Field(default_factory=datetime.now)
+
+    @field_validator("player_name", mode="before")
+    @classmethod
+    def _normalize_player_name(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
 
     @field_validator("player_class", mode="before")
     @classmethod

@@ -50,6 +50,11 @@ class PyttsxWinsoundAlertPlayer:
     def set_muted(self, value: bool) -> None:
         self._muted = value
 
+    def known_phrases(self) -> list[str]:
+        """Every phrase prerendered this session. The set to re-render when
+        switching voices so the new voice covers everything already in use."""
+        return list(self._phrase_paths.keys())
+
     def prerender(self, phrases: list[str]) -> None:
         """Render any not-yet-cached phrases to WAVs.
 
@@ -171,3 +176,91 @@ class PyttsxWinsoundAlertPlayer:
                         first = False
                     writer.writeframes(reader.readframes(reader.getnframes()))
         return target
+
+
+class EdgeTtsAlertPlayer(PyttsxWinsoundAlertPlayer):
+    """Neural TTS via Microsoft Edge's online voices (edge-tts).
+
+    Overrides only `prerender`: each phrase is synthesized to MP3 with
+    edge-tts, decoded to PCM with miniaudio, and written as a WAV at the same
+    cache path the base class plays from — so `play` / concat / mute are
+    inherited unchanged. Requires internet at prerender time; playback is
+    offline from the cache.
+
+    The cache is namespaced per voice (`<cache>/edge/<voice>/`) so switching
+    voices — or coming from the pyttsx3 player, which writes the same
+    filenames — re-renders cleanly instead of replaying stale clips.
+    """
+
+    def __init__(self, cache_dir: Path, voice: str = "en-US-AriaNeural"):
+        self._base_cache_dir = Path(cache_dir)
+        self._voice = voice
+        super().__init__(self._voice_cache_dir(voice))
+
+    @property
+    def voice(self) -> str:
+        return self._voice
+
+    def _voice_cache_dir(self, voice: str) -> Path:
+        safe = "".join(c if c.isalnum() else "_" for c in voice).strip("_") or "default"
+        return self._base_cache_dir / "edge" / safe
+
+    def set_voice(self, voice: str) -> None:
+        """Switch the voice. Points the cache at the new voice's subdir but
+        deliberately leaves the current phrase→WAV map intact, so playback
+        keeps using the prior voice's clips until the next `prerender`
+        repopulates the map for this voice — no silent gap. The new voice
+        therefore goes live after the next prerender (i.e. Calibrate or the
+        startup auto-apply)."""
+        self._voice = voice
+        self.cache_dir = self._voice_cache_dir(voice)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def prerender(self, phrases: list[str]) -> None:
+        try:
+            import asyncio
+
+            import edge_tts
+            import miniaudio
+        except ImportError as exc:
+            raise RuntimeError(
+                "edge-tts / miniaudio not installed. Run `poetry install` to "
+                "pick up the neural-TTS dependencies, or set tts_engine to "
+                "'pyttsx' in your config to use the offline system voice."
+            ) from exc
+
+        rendered = 0
+        for phrase in phrases:
+            target = self.cache_dir / _phrase_to_filename(phrase)
+            self._phrase_paths[phrase] = target
+            if target.exists():
+                continue
+            logger.info("Prerendering (edge-tts %s) %r -> %s", self._voice, phrase, target)
+            mp3 = target.with_suffix(".mp3")
+            try:
+                asyncio.run(edge_tts.Communicate(phrase, self._voice).save(str(mp3)))
+                decoded = miniaudio.decode_file(
+                    str(mp3), nchannels=1, sample_rate=24000,
+                )
+                with wave.open(str(target), "wb") as w:
+                    w.setnchannels(decoded.nchannels)
+                    w.setsampwidth(decoded.sample_width)
+                    w.setframerate(decoded.sample_rate)
+                    w.writeframes(decoded.samples.tobytes())
+                rendered += 1
+            except Exception:
+                # One bad phrase (network blip, odd text) shouldn't sink the
+                # whole prerender — log and move on. Playback later skips or
+                # surfaces the missing clip per the base class's handling.
+                logger.warning(
+                    "edge-tts failed to render %r; skipping", phrase, exc_info=True,
+                )
+            finally:
+                if mp3.exists():
+                    try:
+                        mp3.unlink()
+                    except OSError:
+                        logger.debug("could not remove temp mp3 %s", mp3, exc_info=True)
+        logger.info(
+            "edge-tts prerender complete (%d new of %d total)", rendered, len(phrases),
+        )

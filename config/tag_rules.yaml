@@ -1,0 +1,189 @@
+# Global tag → cooldown mapping for the rule engine.
+#
+# A matched cast carries `tags` (see config/dungeons/*.yaml). The engine
+# concatenates the priority lists of the cast's tags — in `precedence`
+# order — into one ordered list, then walks it like any rule: the first
+# priority whose class-action filter binds an available ability (and whose
+# cast-context conditions pass) fires. If nothing binds, the spell's
+# default `phrase` plays.
+#
+# A per-dungeon `rules:` entry for a spell OVERRIDES this table entirely —
+# the escape hatch for genuinely bespoke casts.
+#
+# Priority fields are the same as a dungeon rule priority
+# (wow_alert/rule_schema.py:Priority): class-action filters
+# category/scope/has_tag/lacks_tag, cast-context gates
+# target_role/target_present/school, and output say/do/phrase.
+#
+# Class-agnostic: filters resolve against whatever the calibrated class
+# library offers, so the same tag does the right thing per spec (Sac for
+# paladin, Cocoon for monk, …) and silently no-ops where a spec lacks the
+# tool.
+
+# Tried first → last for a cast carrying several tags.
+precedence:
+  - interrupt
+  - stop
+  - cc
+  - big_damage_single
+  - bleed
+  - dispel_magic
+  - dispel_curse
+  - dispel_poison
+  - dispel_disease
+  - big_damage_party
+  - snare
+  - dodge
+
+tags:
+  # Interruptible cast → kick. Non-key interrupts are silenced by giving
+  # the spell an empty `phrase` (the kick rec still fires for specs that
+  # can interrupt).
+  interrupt:
+    - category: interrupt
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+
+  # Non-interruptible channel stoppable by CC → knockback/stun, else stun.
+  stop:
+    - category: stop
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+    - category: cc
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+
+  # The enemy (usually an add) should be crowd-controlled → any CC the
+  # spec has up: stun / incapacitate / disorient (Hammer of Justice,
+  # Blinding Light, ...). Targets the caster, so no {target}.
+  cc:
+    - category: cc
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+
+  # A big hit on ONE person — help whoever is targeted, in order:
+  #   1. it's the player themselves → a self defensive that isn't a full
+  #      immunity (Divine Protection, not Bubble); externals don't help you
+  #      cast on yourself. Only fires when a player name is configured.
+  #   2. someone else, non-aggro-dropping external (Sac / Bulwark) — safe
+  #      on anyone, including the tank;
+  #   3. someone else, aggro-dropping external (BoP) — only when the target
+  #      is NOT the tank, since it would drop the tank's threat;
+  #   4. a party-wide wall (Aura Mastery) as the last resort, covering the
+  #      target whether it's you or a teammate.
+  big_damage_single:
+    - target_is_self: true
+      category: defensive
+      scope: self
+      lacks_tag: full_immunity
+      say: "{action.label}"
+      do: "{action.id}"
+    - target_is_self: false
+      category: defensive
+      scope: single_target
+      lacks_tag: aggro_dropping
+      say: "{action.label} {target}"
+      do: "{action.id}"
+    - target_is_self: false
+      category: defensive
+      scope: single_target
+      has_tag: aggro_dropping
+      lacks_target_role: tank
+      say: "{action.label} {target}"
+      do: "{action.id}"
+    - category: defensive
+      scope: party_wide
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+
+  # A physical bleed on a player → an aggro-dropping physical-immunity
+  # external (BoP) actually REMOVES it. Damage-reduction cooldowns only
+  # blunt the ticks, so there is deliberately no DR fallback: if no
+  # immunity is up, the spell's own phrase warns. Never on the tank,
+  # since the immunity drops threat.
+  bleed:
+    - category: defensive
+      scope: single_target
+      has_tag: physical_immunity
+      lacks_target_role: tank
+      say: "{action.label} {target}"
+      do: "{action.id}"
+
+  # A dispellable debuff on a player → the single-target dispel that
+  # handles that school (Cleanse / Detox). One tag per school because the
+  # dispel must match: the chain binds a dispel action only if it carries
+  # the matching subtype tag, so it no-ops cleanly where the spec can't
+  # remove that school (e.g. Paladin + curse → just the warning). For a
+  # raid-wide debuff that wants the party-wide cooldown, tag big_damage_party
+  # instead (Revival also lands there as a heal/dispel).
+  dispel_magic:
+    - category: dispel
+      scope: single_target
+      has_tag: magic
+      say: "{action.label} {target}"
+      do: "{action.id}"
+  dispel_curse:
+    - category: dispel
+      scope: single_target
+      has_tag: curse
+      say: "{action.label} {target}"
+      do: "{action.id}"
+  dispel_poison:
+    - category: dispel
+      scope: single_target
+      has_tag: poison
+      say: "{action.label} {target}"
+      do: "{action.id}"
+  dispel_disease:
+    - category: dispel
+      scope: single_target
+      has_tag: disease
+      say: "{action.label} {target}"
+      do: "{action.id}"
+
+  # A big hit on EVERYONE — keep the group up, in order:
+  #   1. a party-wide wall (Aura Mastery);
+  #   2. a self throughput cooldown (Avenging Wrath) to out-heal it — high
+  #      up because it's a strong answer the moment the wall is down;
+  #   3. a party-wide heal cooldown (Divine Toll);
+  #   4. last resort: a personal damage reducer (Divine Protection, not a
+  #      full immunity) — it only protects you, but when every group tool
+  #      is down, surviving beats a silent warning.
+  # The self steps live only here, never in big_damage_single: with no
+  # single victim, boosting your own output / shielding yourself is the
+  # right lever.
+  big_damage_party:
+    - category: defensive
+      scope: party_wide
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+    - category: heal
+      scope: self
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+    - category: heal
+      scope: party_wide
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+    - category: defensive
+      scope: self
+      lacks_tag: full_immunity
+      say: "{action.label} {spell}"
+      do: "{action.id}"
+
+  # A snare or root on a player → a snare-break (Freedom / Tiger's Lust).
+  # Those abilities carry the snare_break tag and live under `utility`
+  # (they clear movement effects, they don't mitigate damage). Safe on
+  # anyone — they don't drop threat. No fallback: if none is up, the
+  # spell's own phrase warns.
+  snare:
+    - category: utility
+      scope: single_target
+      has_tag: snare_break
+      say: "{action.label} {target}"
+      do: "{action.id}"
+
+  # Avoidable / positional — no cooldown, just the spell's default phrase
+  # ("move", "dodge", "break LoS"). Present so authors can mark a cast
+  # explicitly no-action.
+  dodge: []

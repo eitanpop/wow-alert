@@ -91,6 +91,7 @@ class PipelineWorker(QObject):
         self._roster: list[str] = []
         self._dungeon: str | None = None
         self._roles: dict[str, str] = {}
+        self._player_name: str | None = None
         self._cooldowns: dict[int, bool] = {}
         self._latest_frame: np.ndarray | None = None
         # Minimum wall time per tick. Cast bars last 1-10 s, so even 5 FPS
@@ -106,19 +107,34 @@ class PipelineWorker(QObject):
     def set_paused(self, value: bool) -> None:
         self._paused = value
 
+    @Slot(bool)
+    def set_suggestions_enabled(self, value: bool) -> None:
+        """Toggle cooldown recommendations on the rule engine. When off,
+        every cast emits its plain phrase Alert instead of a 'press this'
+        recommendation. Forwarded straight to the shared rule engine."""
+        self._deps.rule_engine.set_suggestions_enabled(value)
+
+    @Slot(object)
+    def set_dungeon(self, dungeon: str | None) -> None:
+        """Set the active dungeon name on its own, leaving roster/roles/player
+        untouched. Used by the standalone dungeon picker (callouts without
+        calibration); the spell DB + rules are swapped by the caller."""
+        self._dungeon = dungeon
+
     def latest_frame(self) -> np.ndarray | None:
         """Return the most recently captured frame, or None before the first
         successful capture. Callable from any thread."""
         return self._latest_frame
 
-    @Slot(object, object, object)
+    @Slot(object, object, object, object)
     def update_calibration_context(
         self,
         roster: list[str],
         dungeon: str | None,
         roles: dict[str, str],
+        player_name: str | None = None,
     ) -> None:
-        """Refresh roster + dungeon + roles after a calibration.
+        """Refresh roster + dungeon + roles + player name after a calibration.
 
         Called from the UI thread; the worker reads these fields when
         building a RuleDecisionContext for each new cast. Each
@@ -128,6 +144,7 @@ class PipelineWorker(QObject):
         self._roster = list(roster)
         self._dungeon = dungeon
         self._roles = dict(roles)
+        self._player_name = player_name
 
     @Slot(dict)
     def set_cooldowns(self, cooldowns: dict[int, bool]) -> None:
@@ -287,6 +304,7 @@ class PipelineWorker(QObject):
                 cooldowns=dict(self._cooldowns),
                 roster=list(self._roster),
                 roles=dict(self._roles),
+                player_name=self._player_name,
             )
             try:
                 output = self._deps.rule_engine.decide(decision_ctx)

@@ -168,8 +168,9 @@ def cast(spell="Polymorph", target=None, duration=None):
     )
 
 
-def spell(id_="poly", name="Polymorph", severity=Severity.DANGER, phrase="DANGER"):
-    return Spell(id=id_, name=name, severity=severity, phrase=phrase)
+def spell(id_="poly", name="Polymorph", severity=Severity.DANGER, phrase="DANGER",
+          tags=None):
+    return Spell(id=id_, name=name, severity=severity, phrase=phrase, tags=tags or [])
 
 
 _NEXT_SPELL_ID = [1000]
@@ -640,3 +641,270 @@ class TestComposedScenario:
         out = eng.decide(ctx3)
         assert isinstance(out, Alert)
         assert out.message == "Tank Buster on John"
+
+
+class TestTagResolution:
+    """The tag table drives the recommendation when no per-spell rule exists,
+    and a per-spell rule overrides the tags (the escape hatch)."""
+
+    def _engine(self, *actions):
+        from wow_alert.config import REPO_ROOT
+        from wow_alert.tag_rules import load_tag_rules
+        eng = RuleEngine()
+        eng.set_tag_rules(load_tag_rules(REPO_ROOT / "config"))
+        eng.set_class_actions(list(actions))
+        return eng
+
+    def test_tags_drive_recommendation_when_no_rule(self):
+        sac = action("sac", label="Sac", spell_id=6940)
+        eng = self._engine(sac)
+        sp = spell(id_="tb", name="Tank Hit", tags=["big_damage_single"])
+        ctx = RuleDecisionContext(
+            spell=sp, cast=cast(target="John"), canonical_target="John",
+            cooldowns=all_available(sac),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"
+
+    def test_per_spell_rule_overrides_tags(self):
+        # Carries big_damage_single (→ defensive) AND an explicit heal rule. Rule wins.
+        sac = action("sac", label="Sac", category="defensive",
+                     scope="single_target", spell_id=6940)
+        loh = action("loh", label="Lay on Hands", category="heal",
+                     scope="single_target", spell_id=633)
+        eng = self._engine(sac, loh)
+        eng.set_rules([{
+            "on_cast": {"spell_id": "tb"},
+            "priorities": [{"category": "heal", "scope": "single_target",
+                            "say": "{action.label} {target}", "do": "{action.id}"}],
+        }])
+        sp = spell(id_="tb", name="Tank Hit", tags=["big_damage_single"])
+        ctx = RuleDecisionContext(
+            spell=sp, cast=cast(target="John"), canonical_target="John",
+            cooldowns=all_available(sac, loh),
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "loh"  # the rule's heal, not the tag's defensive
+
+    def test_big_damage_falls_to_wings_when_party_dr_down(self):
+        aura = action("aura", label="Aura Mastery", category="defensive",
+                      scope="party_wide", spell_id=31821)
+        wings = action("wings", label="Avenging Wrath", category="heal",
+                       scope="self", spell_id=31884)
+        eng = self._engine(aura, wings)
+        sp = spell(id_="big", name="Big Hit", tags=["big_damage_party"])
+        ctx = RuleDecisionContext(
+            spell=sp, cast=cast(),
+            cooldowns={31821: True, 31884: False},  # Aura Mastery on CD, wings up
+        )
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        # Wings sits right under the party wall, so it fires before Divine Toll.
+        assert out.action == "wings"
+
+    def test_big_damage_party_falls_to_personal_dr_last_resort(self):
+        aura = action("aura", label="Aura", category="defensive",
+                      scope="party_wide", spell_id=31821)
+        wings = action("wings", label="Wings", category="heal",
+                       scope="self", spell_id=31884)
+        toll = action("toll", label="Divine Toll", category="heal",
+                      scope="party_wide", spell_id=375576)
+        bubble = action("bubble", label="Bubble", category="defensive",
+                        scope="self", tags=["full_immunity"], spell_id=642)
+        dp = action("dp", label="Divine Protection", category="defensive",
+                    scope="self", spell_id=498)
+        eng = self._engine(aura, wings, toll, bubble, dp)
+        sp = spell(id_="g", name="Group Hit", phrase="DEF", tags=["big_damage_party"])
+        cds = all_available(aura, wings, toll, bubble, dp)
+        for i in (31821, 31884, 375576):  # Aura, wings, Divine Toll all down
+            cds[i] = True
+        out = eng.decide(RuleDecisionContext(spell=sp, cast=cast(), cooldowns=cds))
+        assert isinstance(out, Recommendation)
+        assert out.action == "dp"  # personal DR last resort, not the immunity Bubble
+
+    def test_suggestions_disabled_skips_recommendation(self):
+        sac = action("sac", label="Sac", spell_id=6940)
+        eng = self._engine(sac)
+        eng.set_suggestions_enabled(False)
+        sp = spell(id_="tb", name="Tank Hit", phrase="TANK BUSTER",
+                   tags=["big_damage_single"])
+        ctx = RuleDecisionContext(
+            spell=sp, cast=cast(target="John"), canonical_target="John",
+            cooldowns=all_available(sac))
+        out = eng.decide(ctx)
+        # Would normally recommend Sac; with suggestions off, just the phrase.
+        assert isinstance(out, Alert)
+        assert out.phrase == "TANK BUSTER"
+        # Flipping it back on restores the recommendation.
+        eng.set_suggestions_enabled(True)
+        out = eng.decide(ctx)
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"
+
+    def test_dodge_tag_falls_through_to_default_alert(self):
+        eng = self._engine(action("sac", spell_id=6940))
+        sp = spell(id_="d", name="Swirly", phrase="MOVE", tags=["dodge"])
+        ctx = RuleDecisionContext(spell=sp, cast=cast(),
+                                  cooldowns=all_available(action("sac", spell_id=6940)))
+        out = eng.decide(ctx)
+        assert isinstance(out, Alert)
+        assert out.phrase == "MOVE"
+
+    def _big_damage_single_setup(self):
+        sac = action("sac", label="Sac", spell_id=6940)
+        bop = action("bop", label="BoP", tags=["aggro_dropping"], spell_id=1022)
+        aura = action("aura", label="Aura", category="defensive",
+                      scope="party_wide", spell_id=31821)
+        eng = self._engine(sac, bop, aura)
+        sp = spell(id_="tb", name="Smash", tags=["big_damage_single"])
+        roles = {"Tank": "tank", "Dps": "dps"}
+
+        def rec(target, on_cd):
+            cds = all_available(sac, bop, aura)
+            for i in on_cd:
+                cds[i] = True
+            return eng.decide(RuleDecisionContext(
+                spell=sp, cast=cast(target=target), canonical_target=target,
+                roster=list(roles), roles=roles, cooldowns=cds))
+        return rec
+
+    def test_big_damage_single_excludes_aggro_dropping_on_tank(self):
+        rec = self._big_damage_single_setup()
+        # Sac up → Sac for anyone (step 1).
+        assert rec("Tank", []).action == "sac"
+        assert rec("Dps", []).action == "sac"
+        # Sac down, target is the tank → BoP (aggro-dropping) excluded → Aura.
+        assert rec("Tank", [6940]).action == "aura"
+        # Sac down, target is a DPS → BoP is allowed.
+        assert rec("Dps", [6940]).action == "bop"
+
+    def test_lacks_target_role_fails_closed_on_unknown_role(self):
+        sac = action("sac", label="Sac", spell_id=6940)
+        bop = action("bop", label="BoP", tags=["aggro_dropping"], spell_id=1022)
+        aura = action("aura", label="Aura", category="defensive",
+                      scope="party_wide", spell_id=31821)
+        eng = self._engine(sac, bop, aura)
+        sp = spell(id_="tb", name="Smash", tags=["big_damage_single"])
+        cds = all_available(sac, bop, aura)
+        cds[6940] = True  # Sac down
+        # Role unknown → BoP step fails closed → Aura, never a possible-tank BoP.
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Mystery"), canonical_target="Mystery",
+            roster=["Mystery"], roles={}, cooldowns=cds))
+        assert isinstance(out, Recommendation)
+        assert out.action == "aura"
+
+    def test_self_target_recommends_personal_defensive_not_immunity(self):
+        # Bubble listed first to prove lacks_tag: full_immunity skips it.
+        bubble = action("bubble", label="Bubble", category="defensive",
+                        scope="self", tags=["full_immunity"], spell_id=642)
+        dp = action("dp", label="Divine Protection", category="defensive",
+                    scope="self", spell_id=498)
+        sac = action("sac", label="Sac", category="defensive",
+                     scope="single_target", spell_id=6940)
+        eng = self._engine(bubble, dp, sac)
+        sp = spell(id_="b", name="Smash", tags=["big_damage_single"])
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Me"), canonical_target="Me",
+            player_name="Me", roster=["Me"], cooldowns=all_available(bubble, dp, sac)))
+        assert isinstance(out, Recommendation)
+        assert out.action == "dp"  # personal DR, not the full-immunity Bubble
+
+    def test_other_target_gets_external_not_self_defensive(self):
+        dp = action("dp", label="Divine Protection", category="defensive",
+                    scope="self", spell_id=498)
+        sac = action("sac", label="Sac", category="defensive",
+                     scope="single_target", spell_id=6940)
+        eng = self._engine(dp, sac)
+        sp = spell(id_="b", name="Smash", tags=["big_damage_single"])
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Tank"), canonical_target="Tank",
+            player_name="Me", roster=["Me", "Tank"], roles={"Tank": "tank"},
+            cooldowns=all_available(dp, sac)))
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"  # external on the teammate, never a self CD
+
+    def test_self_step_dormant_without_player_name(self):
+        dp = action("dp", label="Divine Protection", category="defensive",
+                    scope="self", spell_id=498)
+        sac = action("sac", label="Sac", category="defensive",
+                     scope="single_target", spell_id=6940)
+        eng = self._engine(dp, sac)
+        sp = spell(id_="b", name="Smash", tags=["big_damage_single"])
+        # Cast targets "Me" but no player name configured → not treated as
+        # self, so the external path fires exactly as before the feature.
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Me"), canonical_target="Me",
+            cooldowns=all_available(dp, sac)))
+        assert isinstance(out, Recommendation)
+        assert out.action == "sac"
+
+    def test_cc_tag_recommends_a_cc_ability(self):
+        hoj = action("hoj", label="Hammer", category="cc",
+                     scope="single_target", spell_id=853)
+        eng = self._engine(hoj)
+        sp = spell(id_="addcast", name="Bad Cast", tags=["cc"])
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(), cooldowns=all_available(hoj)))
+        assert isinstance(out, Recommendation)
+        assert out.action == "hoj"
+
+    def test_dispel_tag_binds_matching_school_only(self):
+        cleanse = action("cleanse", label="Cleanse", category="dispel",
+                         scope="single_target", tags=["magic", "poison", "disease"],
+                         spell_id=4987)
+        eng = self._engine(cleanse)
+        # Magic debuff → Cleanse (carries the magic subtype).
+        magic = spell(id_="m", name="Hex", phrase="DISPEL", tags=["dispel_magic"])
+        out = eng.decide(RuleDecisionContext(
+            spell=magic, cast=cast(target="Ann"), canonical_target="Ann",
+            cooldowns=all_available(cleanse)))
+        assert isinstance(out, Recommendation) and out.action == "cleanse"
+        # Curse → Cleanse lacks the curse subtype → no dispel, just the warning.
+        curse = spell(id_="c", name="Hex", phrase="DISPEL", tags=["dispel_curse"])
+        out = eng.decide(RuleDecisionContext(
+            spell=curse, cast=cast(target="Ann"), canonical_target="Ann",
+            cooldowns=all_available(cleanse)))
+        assert isinstance(out, Alert) and out.phrase == "DISPEL"
+
+    def test_snare_tag_binds_snare_break_utility(self):
+        freedom = action("freedom", label="Freedom", category="utility",
+                         scope="single_target", tags=["snare_break"], spell_id=1044)
+        eng = self._engine(freedom)
+        sp = spell(id_="s", name="Web", phrase="SNARED", tags=["snare"])
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Ann"), canonical_target="Ann",
+            cooldowns=all_available(freedom)))
+        assert isinstance(out, Recommendation) and out.action == "freedom"
+        # Freedom down → nothing else breaks it → warning.
+        out = eng.decide(RuleDecisionContext(
+            spell=sp, cast=cast(target="Ann"), canonical_target="Ann",
+            cooldowns={1044: True}))
+        assert isinstance(out, Alert) and out.phrase == "SNARED"
+
+    def test_bleed_uses_physical_immunity_on_nontank_only(self):
+        bop = action("bop", label="BoP",
+                     tags=["aggro_dropping", "physical_immunity"], spell_id=1022)
+        sac = action("sac", label="Sac", spell_id=6940)  # DR, not an immunity
+        aura = action("aura", label="Aura", category="defensive",
+                      scope="party_wide", spell_id=31821)
+        eng = self._engine(bop, sac, aura)
+        sp = spell(id_="bl", name="Rend", phrase="BLEED", tags=["bleed"])
+        roles = {"Tank": "tank", "Dps": "dps"}
+
+        def out(target, on_cd=()):
+            cds = all_available(bop, sac, aura)
+            for i in on_cd:
+                cds[i] = True
+            return eng.decide(RuleDecisionContext(
+                spell=sp, cast=cast(target=target), canonical_target=target,
+                roster=list(roles), roles=roles, cooldowns=cds))
+        # Bleed on a DPS → BoP (physical immunity actually clears it).
+        assert out("Dps").action == "bop"
+        # Bleed on the tank → BoP excluded; no DR fallback → just the warning.
+        assert isinstance(out("Tank"), Alert)
+        assert out("Tank").phrase == "BLEED"
+        # BoP down → no immunity, no DR fallback → warning (DR can't clear a bleed).
+        assert isinstance(out("Dps", on_cd=[1022]), Alert)

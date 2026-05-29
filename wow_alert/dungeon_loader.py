@@ -29,6 +29,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
+from rapidfuzz import fuzz, process
 
 from wow_alert.events import Spell
 
@@ -36,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+# Minimum rapidfuzz score (0-100) to accept a fuzzy dungeon-slug match.
+# High enough that an unrelated name fails (→ no dungeon, warned) but loose
+# enough to absorb a typo or OCR slip ("nexus_point_xenis" → the real file).
+_DUNGEON_MATCH_CUTOFF = 80
 
 
 def slugify(name: str) -> str:
@@ -45,6 +51,52 @@ def slugify(name: str) -> str:
     `calibration.dungeon_name` to the on-disk filename.
     """
     return _SLUG_RE.sub("_", name.lower()).strip("_")
+
+
+def list_dungeon_names(config_dir: Path) -> list[str]:
+    """Display names of all authored dungeons (each file's `dungeon:` header),
+    sorted. Used to populate the calibration picker so names can't be
+    mistyped — a picked name always slugs to a real file."""
+    dungeons_dir = config_dir / "dungeons"
+    if not dungeons_dir.exists():
+        return []
+    names: list[str] = []
+    for p in sorted(dungeons_dir.glob("*.yaml")):
+        if p.stem == "_global":
+            continue
+        try:
+            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        except Exception:
+            logger.warning("Could not read dungeon name from %s", p.name)
+            continue
+        name = raw.get("dungeon")
+        if name:
+            names.append(name)
+    return sorted(names)
+
+
+def _resolve_dungeon_slug(slug: str, dungeons_dir: Path) -> str | None:
+    """Map a (possibly misspelled / OCR'd) slug to an on-disk dungeon file.
+
+    Exact match wins; otherwise fuzzy-match against the available dungeon
+    filenames so a typo still loads the right dungeon. Returns the matched
+    slug, or None when nothing is close enough.
+    """
+    if (dungeons_dir / f"{slug}.yaml").exists():
+        return slug
+    choices = [p.stem for p in dungeons_dir.glob("*.yaml") if p.stem != "_global"]
+    if not choices:
+        return None
+    hit = process.extractOne(
+        slug, choices, scorer=fuzz.ratio, score_cutoff=_DUNGEON_MATCH_CUTOFF,
+    )
+    if hit is None:
+        return None
+    matched, score, _ = hit
+    logger.info(
+        "Dungeon slug %r fuzzy-matched to %r (score %.0f)", slug, matched, score,
+    )
+    return matched
 
 
 class DungeonFile(BaseModel):
@@ -92,19 +144,23 @@ def load_dungeon_config(
 
     if dungeon_name:
         slug = slugify(dungeon_name)
-        dungeon_path = dungeons_dir / f"{slug}.yaml"
-        if dungeon_path.exists():
-            cfg = _load_file(dungeon_path)
+        matched = _resolve_dungeon_slug(slug, dungeons_dir)
+        if matched is not None:
+            cfg = _load_file(dungeons_dir / f"{matched}.yaml")
             spells.extend(cfg.spells)
             rules.extend(cfg.rules)
             logger.info(
-                "Loaded %d spells / %d rules for dungeon %r from %s",
-                len(cfg.spells), len(cfg.rules), dungeon_name, dungeon_path.name,
+                "Loaded %d spells / %d rules for dungeon %r from %s.yaml",
+                len(cfg.spells), len(cfg.rules), dungeon_name, matched,
             )
         else:
-            logger.info(
-                "No dungeon file at %s for %r; using globals only",
-                dungeon_path, dungeon_name,
+            available = sorted(
+                p.stem for p in dungeons_dir.glob("*.yaml") if p.stem != "_global"
+            )
+            logger.warning(
+                "No dungeon file matched %r (slug %r) — NO spell alerts will "
+                "load, only globals. Check the dungeon name. Available: %s",
+                dungeon_name, slug, available,
             )
 
     return spells, rules

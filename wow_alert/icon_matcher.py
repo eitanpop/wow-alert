@@ -27,10 +27,18 @@ Robustness choices:
   higher wins. Avoids losing matches just because the live icon is
   smaller than 64×64.
 
-- **TM_CCOEFF_NORMED.** Normalized cross-correlation tolerates lighting
-  shifts (the dim "on cooldown" overlay) better than absolute-diff
-  metrics. The match score is in [-1, 1]; ~0.7+ is a confident hit,
-  ~0.4-0.7 is uncertain, <0.4 is a miss.
+- **Grayscale TM_CCOEFF_NORMED.** Both sides are desaturated to
+  luminance before correlating, so the score keys on icon *structure*
+  rather than color. TM_CCOEFF_NORMED already tolerates uniform
+  brightness shifts; doing it on grayscale additionally makes the match
+  invariant to the *saturation* shifts a dark/colored dungeon background
+  imparts — the same reference matches the same icon whether it's
+  captured in a bright town or a dark void zone, so no per-dungeon or
+  per-client reference tuning is needed. Trade-off: two icons with
+  identical luminance structure but different colors become harder to
+  tell apart — acceptable because the matcher is already restricted to a
+  single spec's icon set, which is structurally distinct. The match
+  score is in [-1, 1]; ~0.7+ is a confident hit, ~0.4-0.7 uncertain.
 
 - **Threshold default 0.7.** Tuned by eye against synthetic + real
   crops in the unit tests. Tightening it (0.8+) trades recall for
@@ -208,8 +216,14 @@ def _resize(img: np.ndarray, w: int, h: int) -> np.ndarray:
 
 def _correlate(a: np.ndarray, b: np.ndarray) -> float:
     """Single-call normalized cross-correlation, returns a scalar in
-    [-1, 1]. Both arrays must already be the same shape."""
+    [-1, 1]. Both arrays must already be the same shape.
+
+    Both are desaturated to grayscale first so the correlation depends on
+    luminance structure, not color — that's what makes a match survive the
+    saturation/lighting shift a dark dungeon background imparts."""
     if a.shape != b.shape:
         return -1.0
-    result = cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED)
+    a_gray = cv2.cvtColor(a, cv2.COLOR_BGR2GRAY) if a.ndim == 3 else a
+    b_gray = cv2.cvtColor(b, cv2.COLOR_BGR2GRAY) if b.ndim == 3 else b
+    result = cv2.matchTemplate(a_gray, b_gray, cv2.TM_CCOEFF_NORMED)
     return float(result[0, 0])
