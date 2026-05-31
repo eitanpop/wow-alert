@@ -22,14 +22,18 @@ import numpy as np
 from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
+
+from wow_alert.calibration import WOW_CLASSES, WOW_SPECS
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +86,6 @@ class _RegionEditor(QWidget):
         # multiplies on top of that. Effective scale = _scale * _zoom.
         self._scale = 1.0
         self._offset = (0, 0)
-        self._displayed_size = (0, 0)
         self._zoom = 1.0
         self._pan = QPoint(0, 0)
         # Region state — stored as (x1, y1, x2, y2) in image coords.
@@ -118,9 +121,6 @@ class _RegionEditor(QWidget):
 
     def get_region(self, name: str) -> tuple[int, int, int, int] | None:
         return self._regions.get(name)
-
-    def zoom_level(self) -> float:
-        return self._zoom
 
     def zoom_in(self) -> None:
         self._apply_zoom_centered(self._zoom * _BUTTON_FACTOR)
@@ -298,7 +298,6 @@ class _RegionEditor(QWidget):
         if self._pixmap is None:
             self._scale = 1.0
             self._offset = (0, 0)
-            self._displayed_size = (0, 0)
             return
         ww, wh = max(1, self.width()), max(1, self.height())
         sx = ww / self._pixmap.width()
@@ -306,7 +305,6 @@ class _RegionEditor(QWidget):
         self._scale = min(sx, sy)
         dw = int(self._pixmap.width() * self._scale)
         dh = int(self._pixmap.height() * self._scale)
-        self._displayed_size = (dw, dh)
         self._offset = ((ww - dw) // 2, (wh - dh) // 2)
 
     def _image_rect_to_widget(self, bbox: tuple[int, int, int, int]) -> QRect:
@@ -398,6 +396,8 @@ class RegionConfirmDialog(QDialog):
         image_bgr: np.ndarray,
         party_region: tuple[int, int, int, int] | None,
         cooldown_region: tuple[int, int, int, int] | None,
+        player_class: str | None = None,
+        player_spec: str | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -417,6 +417,16 @@ class RegionConfirmDialog(QDialog):
             "Make each rectangle a tight fit around the UI element."
         )
         instructions.setWordWrap(True)
+
+        # Class+spec drive which icon templates the matcher slides across
+        # the cooldown crop. Picked here (not after) so calibration runs
+        # offline — no inference pass needed.
+        self._class_combo, self._spec_combo = self._build_class_spec_combos(
+            player_class, player_spec,
+        )
+        char_form = QFormLayout()
+        char_form.addRow("Class:", self._class_combo)
+        char_form.addRow("Spec:", self._spec_combo)
 
         # Zoom controls: in / out / fit, plus a live percentage readout.
         zoom_bar = QHBoxLayout()
@@ -452,12 +462,57 @@ class RegionConfirmDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         layout.addWidget(instructions)
+        layout.addLayout(char_form)
         layout.addLayout(zoom_bar)
         layout.addWidget(self._editor, stretch=1)
         layout.addWidget(buttons)
 
     def _on_zoom_changed(self, zoom: float) -> None:
         self._zoom_label.setText(f"{int(round(zoom * 100))}%")
+
+    def _build_class_spec_combos(
+        self,
+        initial_class: str | None,
+        initial_spec: str | None,
+    ) -> tuple[QComboBox, QComboBox]:
+        """Build linked class+spec combos. Selecting a class repopulates the
+        spec combo with that class's specs. Pre-selected to `initial_class` /
+        `initial_spec` when provided.
+        """
+        class_combo = QComboBox()
+        class_combo.addItem("(unknown)", userData=None)
+        for cls in WOW_CLASSES:
+            class_combo.addItem(_display_class(cls), userData=cls)
+        spec_combo = QComboBox()
+
+        def repopulate_spec() -> None:
+            cls = class_combo.currentData()
+            current_spec = spec_combo.currentData() if spec_combo.count() else None
+            spec_combo.clear()
+            spec_combo.addItem("(unknown)", userData=None)
+            for spec in WOW_SPECS.get(cls, []):
+                spec_combo.addItem(_display_class(spec), userData=spec)
+            if current_spec is not None:
+                for i in range(spec_combo.count()):
+                    if spec_combo.itemData(i) == current_spec:
+                        spec_combo.setCurrentIndex(i)
+                        break
+
+        class_combo.currentIndexChanged.connect(repopulate_spec)
+
+        if initial_class:
+            for i in range(class_combo.count()):
+                if class_combo.itemData(i) == initial_class:
+                    class_combo.setCurrentIndex(i)
+                    break
+        else:
+            repopulate_spec()  # populate with just "(unknown)"
+        if initial_spec:
+            for i in range(spec_combo.count()):
+                if spec_combo.itemData(i) == initial_spec:
+                    spec_combo.setCurrentIndex(i)
+                    break
+        return class_combo, spec_combo
 
     def result_regions(
         self,
@@ -469,3 +524,13 @@ class RegionConfirmDialog(QDialog):
             self._editor.get_region(_PARTY),
             self._editor.get_region(_COOLDOWN),
         )
+
+    def result_class_spec(self) -> tuple[str | None, str | None]:
+        """The class+spec the user picked. Either may be None when "(unknown)"
+        is selected — caller falls back to a class-unrestricted match."""
+        return (self._class_combo.currentData(), self._spec_combo.currentData())
+
+
+def _display_class(token: str) -> str:
+    """'death_knight' -> 'Death Knight'."""
+    return " ".join(p.capitalize() for p in token.split("_"))

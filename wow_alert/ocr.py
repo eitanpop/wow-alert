@@ -70,3 +70,24 @@ class RapidOcrEngine:
                 xs = [float(pt[0]) for pt in polygon]
                 out.append((str(text), float(conf), min(xs), max(xs)))
         return out
+
+    def read_boxes(
+        self, crop: np.ndarray
+    ) -> list[tuple[str, float, tuple[int, int, int, int]]]:
+        """Like `read()` but keeps the full bounding box per text region:
+        `[(text, conf, (x1, y1, x2, y2))]`, crop-local coordinates. Used by
+        calibration to read party-frame names *and* where each sits (to order
+        them top-to-bottom)."""
+        reader = self._ensure_reader()
+        result, _elapsed = reader(crop)
+        if not result:
+            return []
+        out: list[tuple[str, float, tuple[int, int, int, int]]] = []
+        for entry in result:
+            if len(entry) >= 3:
+                polygon, text, conf = entry[0], entry[1], entry[2]
+                xs = [float(pt[0]) for pt in polygon]
+                ys = [float(pt[1]) for pt in polygon]
+                bbox = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                out.append((str(text), float(conf), bbox))
+        return out

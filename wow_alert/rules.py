@@ -236,6 +236,11 @@ class RuleEngine:
         self._class_actions: list[ClassAction] = []
         self._tag_rules: TagRules = TagRules()
         self._suggestions_enabled: bool = True
+        # Per-tag suggestion filter. None means every tag is enabled. A
+        # non-None set restricts the tag walk to spells whose tags
+        # intersect it; other spells fall through to the spell-default
+        # phrase.
+        self._enabled_tags: set[str] | None = None
 
     def set_suggestions_enabled(self, value: bool) -> None:
         """Toggle cooldown recommendations. When False, decide() skips the
@@ -244,11 +249,34 @@ class RuleEngine:
         self._suggestions_enabled = bool(value)
         logger.info("Rule engine suggestions enabled: %s", self._suggestions_enabled)
 
+    def set_enabled_tags(self, tags: Iterable[str] | None) -> None:
+        """Restrict tag-driven suggestions to a subset.
+
+        `None` (default) accepts every tag — current behavior. A set
+        accepts only spells whose `tags` intersect with it; other spells
+        fall straight to their default-phrase Alert without walking
+        rules. Per-spell rules still fire — those are bespoke, authored
+        deliberately, and the tag filter is meant to silence the global
+        tag table's behavior on specific mechanic categories.
+        """
+        self._enabled_tags = None if tags is None else set(tags)
+        logger.info(
+            "Rule engine enabled tags: %s",
+            "all" if self._enabled_tags is None
+            else sorted(self._enabled_tags),
+        )
+
     def set_tag_rules(self, table: TagRules) -> None:
         """Set the global tag → priority table. Used to resolve a cast's
         recommendation from its `tags` when no per-spell rule overrides it."""
         self._tag_rules = table
         logger.info("Rule engine holds tag rules for %d tags", len(table.tags))
+
+    @property
+    def tag_rules(self) -> TagRules:
+        """The loaded TagRules — the UI uses this to build its per-tag
+        suggestion-toggle checkboxes from the canonical precedence list."""
+        return self._tag_rules
 
     def set_rules(self, raw_rules: list[dict]) -> None:
         """Parse and store rules. Bad entries are skipped with a warning
@@ -318,6 +346,14 @@ class RuleEngine:
         if matching:
             priority_lists = (rule.priorities for rule in matching)
         else:
+            # Tag-suggestion filter: if the user disabled this spell's
+            # category in the suggestions dialog, skip the tag walk and
+            # fall to the spell's default phrase. Per-spell rules above
+            # bypass this (intentional escape hatch).
+            if self._enabled_tags is not None and not (
+                set(spell.tags) & self._enabled_tags
+            ):
+                return self._default_alert(ctx, spell)
             priority_lists = (self._tag_rules.priorities_for(spell.tags),)
         for priorities in priority_lists:
             for prio in priorities:
@@ -391,7 +427,7 @@ class RuleEngine:
             action = self._find_ready_action(prio, ctx)
             if action is None:
                 return _MatchResult(False)
-            bindings["action"] = action
+            bindings["action"] = action  # noqa: F841 — consumed by templates
 
         if prio.target_role is not None:
             if not ctx.canonical_target:
@@ -430,9 +466,8 @@ class RuleEngine:
 
         return _MatchResult(True, bindings)
 
-    @staticmethod
     def _find_ready_action(
-        prio: Priority, ctx: RuleDecisionContext
+        self, prio: Priority, ctx: RuleDecisionContext
     ) -> ClassAction | None:
         for action in ctx.class_actions:
             if prio.category and prio.category not in action.category:

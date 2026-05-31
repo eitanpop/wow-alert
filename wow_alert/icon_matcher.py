@@ -120,6 +120,87 @@ class IconMatcher:
     def spell_ids(self) -> list[int]:
         return list(self._references.keys())
 
+    def find_in_crop(
+        self,
+        crop: np.ndarray,
+        score_threshold: float | None = None,
+        iou_threshold: float = 0.3,
+        scales: tuple[int, ...] = (
+            20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96,
+        ),
+    ) -> list[tuple[int, tuple[int, int, int, int], float]]:
+        """Slide every loaded reference across `crop`; return per-spell peaks.
+
+        For each reference, multi-scale TM_CCOEFF_NORMED against `crop` picks
+        a single best (position, scale). Spells whose peak clears
+        `score_threshold` (default `self.threshold`) are returned, ordered
+        highest-score first. Non-max suppression drops overlapping peaks so a
+        single icon position isn't claimed by two visually similar spells.
+
+        Output: `[(spell_id, (x1, y1, x2, y2), score), ...]` in crop-local
+        coordinates. Caller translates back to source-frame coords.
+        """
+        if crop is None or crop.size == 0 or not self._references:
+            return []
+        if score_threshold is None:
+            score_threshold = self.threshold
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
+        h, w = gray.shape[:2]
+
+        # References are stored already interior-cropped (the outer chrome
+        # ring stripped) so border styling doesn't drag scores down. The
+        # match positions we get back are therefore for the icon's *inner*
+        # region; to report the *full* icon's bbox we expand each match
+        # outward by the inverse of _INTERIOR_FRACTION so the bbox wraps
+        # the whole icon, not just its art core.
+        outer_factor = 1.0 / _INTERIOR_FRACTION
+        candidates: list[tuple[int, tuple[int, int, int, int], float]] = []
+        for spell_id, reference in self._references.items():
+            ref_gray = (
+                cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+                if reference.ndim == 3 else reference
+            )
+            rh, rw = ref_gray.shape[:2]
+            best_score = -1.0
+            best_box: tuple[int, int, int, int] | None = None
+            for size in scales:
+                if size + 2 > min(h, w):
+                    continue
+                interp = cv2.INTER_AREA if size < rw else cv2.INTER_CUBIC
+                tmpl = cv2.resize(ref_gray, (size, size), interpolation=interp)
+                try:
+                    result = cv2.matchTemplate(gray, tmpl, cv2.TM_CCOEFF_NORMED)
+                except cv2.error:
+                    continue
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                if max_val > best_score:
+                    best_score = max_val
+                    x, y = max_loc
+                    # Expand inner bbox to the full icon, anchored on the
+                    # match center.
+                    cx = x + size / 2
+                    cy = y + size / 2
+                    full = size * outer_factor
+                    fx1 = int(round(cx - full / 2))
+                    fy1 = int(round(cy - full / 2))
+                    fx2 = int(round(cx + full / 2))
+                    fy2 = int(round(cy + full / 2))
+                    # Clamp to crop bounds.
+                    fx1 = max(0, fx1)
+                    fy1 = max(0, fy1)
+                    fx2 = min(w, fx2)
+                    fy2 = min(h, fy2)
+                    best_box = (fx1, fy1, fx2, fy2)
+            if best_box is not None and best_score >= score_threshold:
+                candidates.append((spell_id, best_box, best_score))
+
+        candidates.sort(key=lambda c: -c[2])
+        kept: list[tuple[int, tuple[int, int, int, int], float]] = []
+        for cand in candidates:
+            if all(_iou(cand[1], k[1]) < iou_threshold for k in kept):
+                kept.append(cand)
+        return kept
+
     def match(self, crop: np.ndarray) -> tuple[int | None, float, bool]:
         """Return `(closest_spell_id, score, passed_threshold)` for `crop`.
 
@@ -212,6 +293,20 @@ def _resize(img: np.ndarray, w: int, h: int) -> np.ndarray:
     # INTER_CUBIC (smoother on the small icon art than INTER_LINEAR).
     interp = cv2.INTER_AREA if (w < img.shape[1] or h < img.shape[0]) else cv2.INTER_CUBIC
     return cv2.resize(img, (w, h), interpolation=interp)
+
+
+def _iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+    """Intersection-over-union for two (x1,y1,x2,y2) bboxes."""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    aa = (ax2 - ax1) * (ay2 - ay1)
+    bb = (bx2 - bx1) * (by2 - by1)
+    return inter / max(1, aa + bb - inter)
 
 
 def _correlate(a: np.ndarray, b: np.ndarray) -> float:

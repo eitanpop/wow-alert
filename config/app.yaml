@@ -5,9 +5,18 @@ confidence: 0.4
 imgsz: 1280
 window_refresh_interval: 1.0
 target_fps: 10
-lost_track_tolerance_s: 0.5
-alert_dedupe_default_ttl_s: 5.0
-alert_dedupe_max_ttl_s: 10.0
+# How long the tracker keeps an existing cast-bar track alive after the
+# YOLO detector stops emitting a box for it. Tuned to 3 s because the
+# detector flickers below confidence as bar visuals shift (timer ticking,
+# progress fill, glow effects). Anything below ~2 s makes the tracker
+# drop+re-create a track mid-cast, which the dedupe layer then misreads
+# as a new cast once its TTL expires → audio repeats.
+lost_track_tolerance_s: 3.0
+# Floor / cap on the matched-cast dedupe window. Even when a spell has no
+# author-set duration and the OCR'd duration is unreliable, the *previous*
+# alert should still suppress its own repeat for at least this long.
+alert_dedupe_default_ttl_s: 8.0
+alert_dedupe_max_ttl_s: 30.0
 alert_dedupe_unmatched_max_ttl_s: 10.0
 ocr_thread_cap: 2
 show_preview: true

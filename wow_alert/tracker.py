@@ -37,7 +37,6 @@ def iou(a: BBox, b: BBox) -> float:
 class Track:
     track_id: int
     bbox: BBox
-    detection: Detection
     missed: int = 0
 
 
@@ -73,7 +72,6 @@ class CastBarTracker:
             if best_idx >= 0 and best_iou >= self.iou_threshold:
                 det = detections[best_idx]
                 track.bbox = det.bbox
-                track.detection = det
                 track.missed = 0
                 matched_existing_ids.add(tid)
                 matched_detection_indices.add(best_idx)
@@ -90,13 +88,9 @@ class CastBarTracker:
         for i, det in enumerate(detections):
             if i in matched_detection_indices:
                 continue
-            track = Track(track_id=self._next_id, bbox=det.bbox, detection=det)
+            track = Track(track_id=self._next_id, bbox=det.bbox)
             self._next_id += 1
             self._tracks[track.track_id] = track
             update.new.append(track)
 
         return update
-
-    def reset(self) -> None:
-        self._tracks.clear()
-        self._next_id = 1

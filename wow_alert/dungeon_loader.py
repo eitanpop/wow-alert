@@ -53,38 +53,64 @@ def slugify(name: str) -> str:
     return _SLUG_RE.sub("_", name.lower()).strip("_")
 
 
-def list_dungeon_names(config_dir: Path) -> list[str]:
-    """Display names of all authored dungeons (each file's `dungeon:` header),
-    sorted. Used to populate the calibration picker so names can't be
-    mistyped — a picked name always slugs to a real file."""
-    dungeons_dir = config_dir / "dungeons"
-    if not dungeons_dir.exists():
-        return []
+def _layered_dungeons_dirs() -> list[Path]:
+    """Bundled + user dungeons dirs, in load order (defaults, then user).
+
+    User entries take precedence per filename inside the union; this just
+    returns where to look, not how to merge.
+    """
+    from wow_alert.paths import USER_CONFIG_DIR, defaults_config_dir
+    return [defaults_config_dir() / "dungeons", USER_CONFIG_DIR / "dungeons"]
+
+
+def _union_yaml_files(dirs: list[Path]) -> dict[str, Path]:
+    """Map `<slug>.yaml` → effective on-disk path, later dirs winning.
+
+    Walks each existing dir in order; a same-named file in a later dir
+    replaces the earlier one. Used so user overrides shadow bundled
+    defaults file-for-file while new files at either layer still load.
+    """
+    out: dict[str, Path] = {}
+    for d in dirs:
+        if not d.exists():
+            continue
+        for p in d.glob("*.yaml"):
+            out[p.name] = p
+    return out
+
+
+def list_dungeon_names() -> list[str]:
+    """Display names of all authored dungeons across bundled + user dirs.
+
+    Returns the sorted set of `dungeon:` header values.
+    """
+    files = _union_yaml_files(_layered_dungeons_dirs())
     names: list[str] = []
-    for p in sorted(dungeons_dir.glob("*.yaml")):
-        if p.stem == "_global":
+    for name, p in files.items():
+        if Path(name).stem == "_global":
             continue
         try:
             raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         except Exception:
-            logger.warning("Could not read dungeon name from %s", p.name)
+            logger.warning("Could not read dungeon name from %s", p)
             continue
-        name = raw.get("dungeon")
-        if name:
-            names.append(name)
+        title = raw.get("dungeon")
+        if title:
+            names.append(title)
     return sorted(names)
 
 
-def _resolve_dungeon_slug(slug: str, dungeons_dir: Path) -> str | None:
+def _resolve_dungeon_slug(slug: str, files: dict[str, Path]) -> str | None:
     """Map a (possibly misspelled / OCR'd) slug to an on-disk dungeon file.
 
-    Exact match wins; otherwise fuzzy-match against the available dungeon
-    filenames so a typo still loads the right dungeon. Returns the matched
-    slug, or None when nothing is close enough.
+    Works against the unioned filename → path map. Exact match wins;
+    otherwise fuzzy-match against the available stems so a typo still
+    loads the right dungeon. Returns the matched slug, or None when
+    nothing is close enough.
     """
-    if (dungeons_dir / f"{slug}.yaml").exists():
+    if f"{slug}.yaml" in files:
         return slug
-    choices = [p.stem for p in dungeons_dir.glob("*.yaml") if p.stem != "_global"]
+    choices = [Path(name).stem for name in files if Path(name).stem != "_global"]
     if not choices:
         return None
     hit = process.extractOne(
@@ -112,50 +138,57 @@ class DungeonFile(BaseModel):
 
 
 def load_dungeon_config(
-    config_dir: Path,
-    dungeon_name: str | None,
+    _legacy_config_dir: Path | None = None,
+    dungeon_name: str | None = None,
 ) -> tuple[list[Spell], list[dict]]:
     """Load the active-dungeon's spells + rules plus globals.
 
-    Returns `(spells, rules)`. Logs a warning and returns empty lists if
-    `config/dungeons/` doesn't exist — that's a misconfiguration; the
-    rest of the app still runs but matches nothing.
+    Returns `(spells, rules)`. Looks across bundled defaults + user
+    overrides; user files replace same-named bundled files. Each loaded
+    file logs whether it came from the bundled or user source so users
+    can see what's actually in effect.
+
+    `_legacy_config_dir` is accepted but ignored.
     """
-    dungeons_dir = config_dir / "dungeons"
+    files = _union_yaml_files(_layered_dungeons_dirs())
     spells: list[Spell] = []
     rules: list[dict] = []
 
-    if not dungeons_dir.exists():
+    if not files:
         logger.warning(
-            "No config/dungeons/ directory at %s — spell DB will be empty.",
-            dungeons_dir,
+            "No dungeon yaml files found in bundled defaults or user "
+            "override dir — spell DB will be empty.",
         )
         return spells, rules
 
-    global_path = dungeons_dir / "_global.yaml"
-    if global_path.exists():
+    global_path = files.get("_global.yaml")
+    if global_path is not None:
         cfg = _load_file(global_path)
         spells.extend(cfg.spells)
         rules.extend(cfg.rules)
         logger.info(
-            "Loaded %d global spells / %d global rules from %s",
+            "Loaded %d global spells / %d global rules from %s (%s)",
             len(cfg.spells), len(cfg.rules), global_path.name,
+            _source_label(global_path),
         )
 
     if dungeon_name:
         slug = slugify(dungeon_name)
-        matched = _resolve_dungeon_slug(slug, dungeons_dir)
+        matched = _resolve_dungeon_slug(slug, files)
         if matched is not None:
-            cfg = _load_file(dungeons_dir / f"{matched}.yaml")
+            path = files[f"{matched}.yaml"]
+            cfg = _load_file(path)
             spells.extend(cfg.spells)
             rules.extend(cfg.rules)
             logger.info(
-                "Loaded %d spells / %d rules for dungeon %r from %s.yaml",
+                "Loaded %d spells / %d rules for dungeon %r from %s.yaml (%s)",
                 len(cfg.spells), len(cfg.rules), dungeon_name, matched,
+                _source_label(path),
             )
         else:
             available = sorted(
-                p.stem for p in dungeons_dir.glob("*.yaml") if p.stem != "_global"
+                Path(name).stem for name in files
+                if Path(name).stem != "_global"
             )
             logger.warning(
                 "No dungeon file matched %r (slug %r) — NO spell alerts will "
@@ -164,6 +197,17 @@ def load_dungeon_config(
             )
 
     return spells, rules
+
+
+def _source_label(path: Path) -> str:
+    """Tag a loaded file with whether it came from user overrides or
+    bundled defaults, for INFO logs."""
+    from wow_alert.paths import USER_CONFIG_DIR
+    try:
+        path.relative_to(USER_CONFIG_DIR)
+        return "user override"
+    except ValueError:
+        return "bundled"
 
 
 def _load_file(path: Path) -> DungeonFile:

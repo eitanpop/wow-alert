@@ -44,23 +44,42 @@ class TagRules(BaseModel):
         return out
 
 
-def load_tag_rules(config_dir: Path) -> TagRules:
-    """Load `config/tag_rules.yaml`. Returns an empty table (no behavior,
-    everything falls through to spell-default phrases) if the file is
-    missing — with a warning, since that disables all tag-driven rules."""
-    path = config_dir / "tag_rules.yaml"
-    if not path.exists():
+def load_tag_rules(_legacy_config_dir: Path | None = None) -> TagRules:
+    """Load `tag_rules.yaml`, user override winning over bundled default.
+
+    `_legacy_config_dir` is accepted but ignored — resolution goes
+    through `paths`:
+
+      1. `<USER_DATA>/wow-alert/config/tag_rules.yaml` (if present)
+      2. `wow_alert/_defaults/tag_rules.yaml` (bundled)
+      3. Empty table (with warning) if both are missing
+
+    A loaded user override emits an INFO log so users can confirm which
+    version they're running.
+    """
+    from wow_alert.paths import USER_CONFIG_DIR, defaults_config_dir
+
+    user_path = USER_CONFIG_DIR / "tag_rules.yaml"
+    default_path = defaults_config_dir() / "tag_rules.yaml"
+    if user_path.exists():
+        path = user_path
+        source = "user override"
+    elif default_path.exists():
+        path = default_path
+        source = "bundled default"
+    else:
         logger.warning(
-            "tag_rules.yaml not found at %s — tag-driven recommendations "
-            "disabled; casts will fall through to their default phrases.",
-            path,
+            "tag_rules.yaml not found at %s or %s — tag-driven "
+            "recommendations disabled; casts will fall through to "
+            "their default phrases.",
+            user_path, default_path,
         )
         return TagRules()
     with path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     table = TagRules.model_validate(raw)
     logger.info(
-        "Loaded tag rules: %d tags, precedence=%s",
-        len(table.tags), table.precedence,
+        "Loaded tag rules (%s): %d tags, precedence=%s",
+        source, len(table.tags), table.precedence,
     )
     return table

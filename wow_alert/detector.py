@@ -43,14 +43,6 @@ class YoloDetector:
                 f"Verify the file is a valid ultralytics weights export."
             ) from exc
 
-    @property
-    def device(self) -> str:
-        return self._device
-
-    @property
-    def device_name(self) -> str:
-        return self._device_name
-
     def set_confidence(self, value: float) -> None:
         self.confidence = value
 

@@ -1,36 +1,33 @@
-"""Post-calibration edit dialog.
+"""Roster editor.
 
-After the LLM finishes, this dialog lets the user verify what was detected
-and fix it before it's persisted. Useful because:
-  - WoW truncates long names in party frames; the LLM correctly reads what
-    it sees ("Shafte…") but the user knows the full name ("Shafter Joel").
-  - The LLM sometimes returns null for hard-to-read slots; the user can
-    fill those in by hand.
-  - The dungeon name occasionally OCRs incorrectly or isn't in the
-    screenshot; the user can override.
+The fast-changing slice of calibration: who's in the party, their roles, and
+which row is "Me". Class/spec + screen regions live in the Region dialog,
+not here — those rarely change between runs. Roster updates every dungeon.
 
-The dialog shows a thumbnail of each detected party slot next to its name
-field so the user has visual context for what they're editing.
+The "Load party members" button takes a fresh screenshot, crops the saved
+party region from the calibration, and OCRs names into the rows so the user
+doesn't have to type. Existing rows are replaced. Manual add/remove and edit
+are available too.
 """
 from __future__ import annotations
 
 import logging
-from copy import deepcopy
 
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QPushButton,
     QRadioButton,
     QScrollArea,
     QVBoxLayout,
@@ -40,18 +37,15 @@ from PySide6.QtWidgets import (
 from wow_alert.calibration import (
     Calibration,
     PartyMember,
-    WOW_CLASSES,
-    WOW_SPECS,
+    ocr_party_members,
 )
 
 logger = logging.getLogger(__name__)
 
 
-_THUMBNAIL_HEIGHT = 48  # px; just enough to read the slot, keeps dialog compact
+_THUMBNAIL_HEIGHT = 48
 
-# Role dropdown values. Index 0 is "unknown" — maps to None in the saved
-# Calibration. The display labels are user-friendly; the saved values are
-# the lowercase tokens the rule engine expects.
+# Role dropdown values. Index 0 is "unknown" — maps to None on save.
 _ROLE_OPTIONS = [
     ("(unknown)", None),
     ("Tank", "tank"),
@@ -60,38 +54,36 @@ _ROLE_OPTIONS = [
 ]
 
 
-def _display_name(token: str) -> str:
-    """Convert a canonical lowercase token to a display label.
-    'death_knight' -> 'Death Knight'."""
-    return " ".join(p.capitalize() for p in token.split("_"))
+class RosterDialog(QDialog):
+    """Edit the per-run roster (party member names + roles + "Me").
 
-
-class CalibrationDialog(QDialog):
-    """Edit pass over a fresh `Calibration` before it's persisted.
-
-    Constructed with the source frame so we can render per-slot thumbnails.
+    Constructed with the current Calibration (regions + class/spec stay
+    untouched) and a way to grab a fresh frame for the OCR refresh button.
     Call `result_calibration()` after `exec()` returns Accepted to get the
-    edited Calibration; ignore it on Rejected and discard the calibration.
+    updated Calibration; on Reject keep the prior one.
     """
 
     def __init__(
         self,
         cal: Calibration,
-        source_frame: np.ndarray,
+        frame_provider,
+        ocr,
         parent=None,
     ):
+        """`frame_provider` is a no-arg callable returning the latest BGR
+        frame (or None when no frame is available — happens before the
+        worker captures its first one). `ocr` is the live OcrEngine.
+        """
         super().__init__(parent)
-        self.setWindowTitle("Edit calibration")
+        self.setWindowTitle("Roster")
         self.resize(560, 600)
 
         self._cal = cal
-        self._source = source_frame
-        # (member_index, QLineEdit, QComboBox, QRadioButton) — we keep indices
-        # rather than copying PartyMember objects so bbox + identity stay tied
-        # to the original detection. The combo is the role selector; the radio
-        # marks which member is the player ("Me").
-        self._member_rows: list[tuple[int, QLineEdit, QComboBox, QRadioButton]] = []
-        # Exclusive group so exactly one row can be marked "Me" (or none).
+        self._frame_provider = frame_provider
+        self._ocr = ocr
+        # Each row owns its widgets; we rebuild the list from scratch on every
+        # "Load party members" so we don't have to reconcile bbox identities.
+        self._rows: list[_RosterRow] = []
         self._me_group = QButtonGroup(self)
         self._me_group.setExclusive(True)
 
@@ -99,203 +91,233 @@ class CalibrationDialog(QDialog):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
-        # The dungeon is chosen in the main window's top-level picker, not
-        # here — this dialog only edits party + class/spec + the "Me" marker.
-        form = QFormLayout()
+        # Header: live action button + count label
+        header = QHBoxLayout()
+        self._count_label = QLabel()
+        self._load_btn = QPushButton("Load party members")
+        self._load_btn.setToolTip(
+            "Snapshot the screen and OCR names from the saved party region."
+        )
+        self._load_btn.clicked.connect(self._on_load_clicked)
+        self._add_btn = QPushButton("Add row")
+        self._add_btn.clicked.connect(self._on_add_clicked)
+        header.addWidget(self._count_label)
+        header.addStretch(1)
+        header.addWidget(self._add_btn)
+        header.addWidget(self._load_btn)
+        root.addLayout(header)
 
-        # Class / spec dropdowns. Class drives the spec list — selecting
-        # paladin shows holy/protection/retribution; switching to monk
-        # rebuilds with brewmaster/mistweaver/windwalker. Pre-selected to
-        # whatever Pass 1's LLM call returned.
-        self._class_combo = QComboBox()
-        self._class_combo.addItem("(unknown)", userData=None)
-        for cls in WOW_CLASSES:
-            self._class_combo.addItem(_display_name(cls), userData=cls)
-        self._spec_combo = QComboBox()
-        self._class_combo.currentIndexChanged.connect(self._on_class_changed)
-
-        # Order matters: connect first, then set the initial class — that
-        # way _on_class_changed runs and populates the spec combo before
-        # we try to pre-select within it.
-        if cal.player_class:
-            for i in range(self._class_combo.count()):
-                if self._class_combo.itemData(i) == cal.player_class:
-                    self._class_combo.setCurrentIndex(i)
-                    break
-        else:
-            self._on_class_changed()  # populate spec combo with "(unknown)" only
-        if cal.player_spec:
-            for i in range(self._spec_combo.count()):
-                if self._spec_combo.itemData(i) == cal.player_spec:
-                    self._spec_combo.setCurrentIndex(i)
-                    break
-
-        form.addRow("Class:", self._class_combo)
-        form.addRow("Spec:", self._spec_combo)
-        root.addLayout(form)
-
-        root.addWidget(self._make_section_label(
-            f"Party members ({len(cal.party_members)} detected)"
-        ))
-        # The "Me" column marks which member is the player, so the engine can
-        # tell a cast on you from one on a teammate (→ self defensive). Pick
-        # the row matching your character.
-        hint = QLabel("Mark yourself with “Me” so self-defensive calls work.")
+        hint = QLabel("Mark yourself with “Me” so self-defensive callouts work.")
         hint.setStyleSheet("color: gray;")
         root.addWidget(hint)
-        root.addWidget(self._build_member_list())
 
-        root.addWidget(self._make_section_label(
-            f"Cooldown icons: {len(cal.cooldown_icons)} detected"
-        ))
+        # Scrolling list of rows
+        self._rows_container = QWidget()
+        self._rows_layout = QVBoxLayout(self._rows_container)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(6)
+        self._rows_layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidget(self._rows_container)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.StyledPanel)
+        root.addWidget(scroll, stretch=1)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+        # Seed from the saved calibration's existing roster (could be empty).
+        self._set_rows_from_members(
+            cal.party_members, source_frame=None,
+        )
+        self._refresh_count()
+
+        # First-time open: if no roster yet but a party region is saved,
+        # auto-run the OCR pass so the dialog isn't a confusing empty list.
+        # The user can still click "Load party members" later to refresh.
+        if not cal.party_members and cal.party_region is not None:
+            QTimer.singleShot(0, self._on_load_clicked)
+
+    # ---- public API ----
+
     def result_calibration(self) -> Calibration:
-        """Build a new Calibration from the edited field values. Call only
-        after the dialog was accepted."""
-        edited_members: list[PartyMember] = []
+        """Build a Calibration with the edited roster, leaving UI fields
+        (regions, class/spec, icons) untouched."""
+        members: list[PartyMember] = []
         player_name: str | None = None
-        for idx, name_edit, role_combo, me_radio in self._member_rows:
-            original = self._cal.party_members[idx]
-            name = name_edit.text().strip() or None
-            role = role_combo.currentData()  # None for "(unknown)", else the lowercase token
-            edited_members.append(
-                PartyMember(name=name, role=role, bbox=original.bbox)
+        for row in self._rows:
+            name = row.name_edit.text().strip() or None
+            role = row.role_combo.currentData()
+            members.append(PartyMember(name=name, role=role, bbox=row.bbox))
+            if row.me_radio.isChecked():
+                player_name = name
+        return self._cal.model_copy(update={
+            "party_members": members,
+            "player_name": player_name,
+        })
+
+    # ---- callbacks ----
+
+    def _on_load_clicked(self) -> None:
+        """OCR the saved party region from a fresh screenshot."""
+        if self._cal.party_region is None:
+            QMessageBox.warning(
+                self, "No party region",
+                "No party region is saved. Click Calibrate first to set "
+                "where the party frames are on screen.",
             )
-            if me_radio.isChecked():
-                player_name = name  # the (possibly edited) name of the "Me" row
+            return
+        frame = self._frame_provider()
+        if frame is None:
+            QMessageBox.warning(
+                self, "No frame",
+                "The worker hasn't captured a frame yet — wait a moment and "
+                "try again.",
+            )
+            return
+        try:
+            members = ocr_party_members(frame, self._cal.party_region, self._ocr)
+        except Exception as exc:
+            logger.exception("OCR party read failed")
+            QMessageBox.critical(self, "OCR failed", str(exc))
+            return
+        # Convert dicts to PartyMembers (no role from OCR; default unknown).
+        as_members = [
+            PartyMember(name=m["name"], role=None, bbox=m["bbox"])
+            for m in members
+        ]
+        self._set_rows_from_members(as_members, source_frame=frame)
+        self._refresh_count()
+        if not as_members:
+            QMessageBox.information(
+                self, "No names",
+                "OCR didn't read any names. Check that the party region "
+                "covers the party frames and try again.",
+            )
 
-        player_class = self._class_combo.currentData()
-        player_spec = self._spec_combo.currentData()
-
-        # deepcopy to preserve cooldown_icons / notes / calibrated_at without
-        # mutating the original (the caller may want to compare before/after).
-        # dungeon_name is preserved from the calibration (set upstream from
-        # the top-level picker), not edited here.
-        return Calibration(
-            party_members=edited_members,
-            cooldown_icons=deepcopy(self._cal.cooldown_icons),
-            dungeon_name=self._cal.dungeon_name,
-            player_class=player_class,
-            player_spec=player_spec,
-            player_name=player_name,
-            notes=self._cal.notes,
-            calibrated_at=self._cal.calibrated_at,
-        )
-
-    def _on_class_changed(self) -> None:
-        """Repopulate the spec combo when class changes. Tries to preserve
-        the current selection if it's still valid for the new class — that
-        way a user toggling between two classes doesn't lose their spec
-        each time."""
-        cls = self._class_combo.currentData()
-        current_spec = (
-            self._spec_combo.currentData() if self._spec_combo.count() else None
-        )
-        self._spec_combo.clear()
-        self._spec_combo.addItem("(unknown)", userData=None)
-        for spec in WOW_SPECS.get(cls, []):
-            self._spec_combo.addItem(_display_name(spec), userData=spec)
-        # Restore previous selection if still applicable.
-        if current_spec is not None:
-            for i in range(self._spec_combo.count()):
-                if self._spec_combo.itemData(i) == current_spec:
-                    self._spec_combo.setCurrentIndex(i)
-                    break
+    def _on_add_clicked(self) -> None:
+        """Append a blank row for manual entry (no bbox → no thumbnail)."""
+        self._append_row(PartyMember(name=None, role=None, bbox=(0, 0, 0, 0)),
+                         source_frame=None)
+        self._refresh_count()
 
     # ---- internals ----
 
-    @staticmethod
-    def _make_section_label(text: str) -> QLabel:
-        label = QLabel(text)
-        font = label.font()
-        font.setBold(True)
-        label.setFont(font)
-        return label
+    def _set_rows_from_members(
+        self,
+        members: list[PartyMember],
+        source_frame: np.ndarray | None,
+    ) -> None:
+        """Wipe the current rows and rebuild from `members`."""
+        for row in self._rows:
+            row.widget.setParent(None)
+            row.widget.deleteLater()
+        self._rows.clear()
+        for m in members:
+            self._append_row(m, source_frame=source_frame)
+        # Preserve the saved "Me" selection if it matches one of the rows.
+        if self._cal.player_name:
+            target = self._cal.player_name.strip().lower()
+            for row in self._rows:
+                if (row.name_edit.text() or "").strip().lower() == target:
+                    row.me_radio.setChecked(True)
+                    break
 
-    def _build_member_list(self) -> QWidget:
-        container = QWidget()
-        col = QVBoxLayout(container)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(6)
+    def _append_row(
+        self,
+        member: PartyMember,
+        source_frame: np.ndarray | None,
+    ) -> None:
+        row = _RosterRow(member, source_frame, self._me_group, self)
+        # Insert before the trailing stretch.
+        self._rows_layout.insertWidget(self._rows_layout.count() - 1, row.widget)
+        self._rows.append(row)
+        row.remove_clicked.connect(lambda r=row: self._remove_row(r))
 
-        if not self._cal.party_members:
-            empty = QLabel("(no party members detected)")
-            empty.setStyleSheet("color: gray;")
-            col.addWidget(empty)
-        else:
-            for idx, member in enumerate(self._cal.party_members):
-                col.addWidget(self._build_member_row(idx, member))
-        col.addStretch(1)
+    def _remove_row(self, row: "_RosterRow") -> None:
+        if row not in self._rows:
+            return
+        self._rows.remove(row)
+        row.widget.setParent(None)
+        row.widget.deleteLater()
+        self._refresh_count()
 
-        scroll = QScrollArea()
-        scroll.setWidget(container)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.StyledPanel)
-        return scroll
+    def _refresh_count(self) -> None:
+        self._count_label.setText(
+            f"{len(self._rows)} member(s) — optional, leave empty to skip"
+        )
 
-    def _build_member_row(self, idx: int, member: PartyMember) -> QWidget:
-        row = QWidget()
-        layout = QHBoxLayout(row)
+
+class _RosterRow:
+    """One row in the roster list. Plain Python class wrapping the widgets so
+    the dialog can iterate them without a separate model layer."""
+
+    def __init__(
+        self,
+        member: PartyMember,
+        source_frame: np.ndarray | None,
+        me_group: QButtonGroup,
+        dialog: QDialog,
+    ):
+        self.bbox = member.bbox
+        self.widget = QWidget(dialog)
+        layout = QHBoxLayout(self.widget)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(10)
 
-        # Slot thumbnail — gives the user visual context for what they're
-        # editing, which matters most when the LLM read got truncated.
         thumb = QLabel()
         thumb.setFixedHeight(_THUMBNAIL_HEIGHT)
-        pixmap = self._crop_pixmap(member.bbox)
+        pixmap = self._crop_pixmap(source_frame, member.bbox)
         if pixmap is not None:
             thumb.setPixmap(pixmap)
         else:
-            thumb.setText("(no preview)")
-            thumb.setStyleSheet("color: gray;")
+            thumb.setText("")
+            thumb.setFixedWidth(80)
         layout.addWidget(thumb)
 
-        name_edit = QLineEdit(member.name or "")
-        name_edit.setPlaceholderText("Name (LLM couldn't read)" if not member.name else "")
-        layout.addWidget(name_edit, stretch=1)
+        self.name_edit = QLineEdit(member.name or "")
+        self.name_edit.setPlaceholderText("Name")
+        layout.addWidget(self.name_edit, stretch=1)
 
-        # Role selector. Pre-selected to whatever Pass 2 returned (or "unknown"
-        # if it couldn't tell). One click for the user to correct.
-        role_combo = QComboBox()
+        self.role_combo = QComboBox()
         for label, value in _ROLE_OPTIONS:
-            role_combo.addItem(label, userData=value)
-        # Pick the index matching the LLM-returned role; default to 0 ("unknown").
+            self.role_combo.addItem(label, userData=value)
         for i, (_, value) in enumerate(_ROLE_OPTIONS):
             if value == member.role:
-                role_combo.setCurrentIndex(i)
+                self.role_combo.setCurrentIndex(i)
                 break
-        role_combo.setFixedWidth(100)
-        layout.addWidget(role_combo)
+        self.role_combo.setFixedWidth(100)
+        layout.addWidget(self.role_combo)
 
-        # "Me" marker — exclusive across all rows. Pre-checked when this
-        # member's name matches the saved player name.
-        me_radio = QRadioButton("Me")
-        if member.name and self._cal.player_name and \
-                member.name.strip().lower() == self._cal.player_name.strip().lower():
-            me_radio.setChecked(True)
-        self._me_group.addButton(me_radio)
-        layout.addWidget(me_radio)
+        self.me_radio = QRadioButton("Me")
+        me_group.addButton(self.me_radio)
+        layout.addWidget(self.me_radio)
 
-        self._member_rows.append((idx, name_edit, role_combo, me_radio))
-        return row
+        remove_btn = QPushButton("✕")
+        remove_btn.setFixedWidth(28)
+        remove_btn.setToolTip("Remove this row")
+        layout.addWidget(remove_btn)
+        # Bubble up so the dialog can re-layout + update the count.
+        # Use a small QObject as the signal carrier since the row isn't a QObject.
+        self._signal_carrier = _RemoveSignal()
+        self.remove_clicked = self._signal_carrier.fired
+        remove_btn.clicked.connect(self._signal_carrier.emit_fired)
 
-    def _crop_pixmap(self, bbox: tuple[int, int, int, int]) -> QPixmap | None:
-        h, w = self._source.shape[:2]
+    @staticmethod
+    def _crop_pixmap(
+        source_frame: np.ndarray | None,
+        bbox: tuple[int, int, int, int],
+    ) -> QPixmap | None:
+        if source_frame is None:
+            return None
+        h, w = source_frame.shape[:2]
         x1, y1, x2, y2 = bbox
-        # Pad the display crop ~12 px on each side: the LLM's bbox tends
-        # to be tight on the name + HP region of each slot and miss the
-        # role icons / status bars at the edges, which makes the
-        # thumbnail look clipped. The saved bbox stays as the LLM
-        # returned it — only the displayed thumbnail uses the padded
-        # crop, so calibration semantics are unchanged.
         pad = 12
         x1 = max(0, min(x1 - pad, w))
         y1 = max(0, min(y1 - pad, h))
@@ -303,13 +325,20 @@ class CalibrationDialog(QDialog):
         y2 = max(0, min(y2 + pad, h))
         if x2 <= x1 or y2 <= y1:
             return None
-        crop_bgr = self._source[y1:y2, x1:x2]
+        crop_bgr = source_frame[y1:y2, x1:x2]
         rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
         ch, cw = rgb.shape[:2]
-        # `.copy()` is essential — QImage doesn't take ownership of the
-        # numpy buffer, and the slice would otherwise be reclaimed by the GC
-        # while Qt was still rendering from it.
-        qimg = QImage(rgb.data, cw, ch, cw * 3, QImage.Format.Format_RGB888).copy()
-        pixmap = QPixmap.fromImage(qimg)
-        # Scale to the row height, preserving aspect.
-        return pixmap.scaledToHeight(_THUMBNAIL_HEIGHT, Qt.TransformationMode.SmoothTransformation)
+        qimg = QImage(
+            rgb.data, cw, ch, cw * 3, QImage.Format.Format_RGB888,
+        ).copy()
+        return QPixmap.fromImage(qimg).scaledToHeight(
+            _THUMBNAIL_HEIGHT, Qt.TransformationMode.SmoothTransformation,
+        )
+
+
+class _RemoveSignal(QObject):
+    """Carrier so the plain-Python _RosterRow can re-emit clicks upward."""
+    fired = Signal()
+
+    def emit_fired(self) -> None:
+        self.fired.emit()

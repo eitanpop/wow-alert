@@ -8,21 +8,29 @@ path:
                         Call this from a setup path, never from a hot loop.
   play(phrase)        — fast. Either:
                           - str: looks up the cached WAV and plays it as-is.
-                          - list[str]: stitches the cached WAVs into a
-                            single concat clip on disk (cached under a
-                            deterministic filename derived from the phrase
-                            sequence) and plays that file. "BOP" + "Captain
-                            Garrick" plays as a single "BOP Captain Garrick"
-                            callout. Disk caching is necessary because
-                            winsound's SND_ASYNC mode is incompatible with
-                            SND_MEMORY — async playback requires a file path.
+                          - list[str]: stitches the cached WAVs into a single
+                            concat WAV in a session-only temp dir and plays
+                            that file. The temp dir is wiped on app exit so
+                            concats never persist between sessions — the
+                            per-roster-per-dungeon combinatorial explosion
+                            stays bounded by what's played in one session.
+                            winsound's SND_ASYNC needs a file path; we use a
+                            temp file rather than memory streaming.
                         Phrases never prerendered raise KeyError — that is
                         a wiring bug in the caller.
+
+Roster-name eviction: when a new roster loads, the previous roster's name
+WAVs are deleted via `evict_phrases(names)`. Keeps a pug player's cache
+flat over time — only the current group's names live on disk.
 """
 from __future__ import annotations
 
+import atexit
 import logging
+import shutil
 import sys
+import tempfile
+import threading
 import wave
 from pathlib import Path
 
@@ -42,10 +50,73 @@ class PyttsxWinsoundAlertPlayer:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._phrase_paths: dict[str, Path] = {}
         self._muted = False
+        # Per-phrase coordination so concurrent prerender() callers don't
+        # try to render the same phrase twice. The startup catalog warmup
+        # runs on a background thread; if a calibration prerender (which
+        # asks for a subset of the same phrases) races it on a cold cache,
+        # both would otherwise hit edge-tts for the same phrase and decode
+        # half-written MP3s. With the dict + lock, the second caller sees
+        # the in-flight Event and waits instead of duplicating the call.
+        self._rendering: dict[str, threading.Event] = {}
+        self._rendering_lock = threading.Lock()
+        # Session-only directory for stitched concat clips. Wiped on app
+        # exit so concat WAVs never accumulate across sessions — addresses
+        # the per-roster-per-dungeon combinatorial explosion that would
+        # otherwise pile up GBs over weeks of pug play.
+        self._session_temp = Path(tempfile.mkdtemp(prefix="wow_alert_concat_"))
+        atexit.register(self._cleanup_session_temp)
 
-    @property
-    def muted(self) -> bool:
-        return self._muted
+    def _cleanup_session_temp(self) -> None:
+        try:
+            shutil.rmtree(self._session_temp, ignore_errors=True)
+        except Exception:
+            logger.debug("session-temp cleanup raised", exc_info=True)
+
+    def evict_phrases(self, phrases: list[str]) -> None:
+        """Delete cached WAVs for `phrases` from disk + the in-memory map.
+
+        Used by the Roster flow: when "Load party members" runs, the prior
+        roster's name clips are evicted before the new names render. Caps
+        on-disk size at the current group plus the bounded content catalog.
+        Missing files are ignored — calling on a fresh install is safe.
+        """
+        for phrase in phrases:
+            path = self._phrase_paths.pop(phrase, None)
+            if path is None:
+                path = self.cache_dir / _phrase_to_filename(phrase)
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.debug("evict_phrases: couldn't remove %s: %s", path, exc)
+
+    def _claim_phrase(
+        self, phrase: str, force_owner: bool = True,
+    ) -> threading.Event | None:
+        """Per-phrase render coordination.
+
+        First caller for a phrase gets a fresh Event back, becomes the
+        owner, and renders. Concurrent callers see the existing Event and
+        get None (with `force_owner=True`) or get the Event back (with
+        `force_owner=False`) so they can `event.wait()` for the owner to
+        finish.
+
+        The two-call dance is so we don't `wait()` while still holding the
+        lock, which would deadlock other phrases.
+        """
+        with self._rendering_lock:
+            existing = self._rendering.get(phrase)
+            if existing is not None:
+                return None if force_owner else existing
+            event = threading.Event()
+            self._rendering[phrase] = event
+            return event
+
+    def _release_phrase(self, phrase: str) -> None:
+        """Mark a phrase rendered (success or failure) and wake waiters."""
+        with self._rendering_lock:
+            event = self._rendering.pop(phrase, None)
+        if event is not None:
+            event.set()
 
     def set_muted(self, value: bool) -> None:
         self._muted = value
@@ -78,10 +149,20 @@ class PyttsxWinsoundAlertPlayer:
             self._phrase_paths[phrase] = target
             if target.exists():
                 continue
+            # Per-phrase coordination so concurrent prerender() calls don't
+            # both kick off SAPI on the same phrase. Same dance as the
+            # edge-tts subclass (see _claim_phrase docstring).
+            event = self._claim_phrase(phrase)
+            if event is None:
+                event = self._claim_phrase(phrase, force_owner=False)
+                if event is not None:
+                    event.wait()
+                continue
             logger.info("Prerendering TTS phrase %r -> %s", phrase, target)
             try:
                 engine = pyttsx3.init()
             except Exception as exc:
+                self._release_phrase(phrase)
                 raise RuntimeError(
                     f"Failed to initialize the system TTS engine ({exc}). "
                     f"On Windows, this usually means SAPI isn't available — "
@@ -92,6 +173,7 @@ class PyttsxWinsoundAlertPlayer:
                 engine.runAndWait()
                 rendered += 1
             finally:
+                self._release_phrase(phrase)
                 try:
                     engine.stop()
                 except Exception:
@@ -141,14 +223,17 @@ class PyttsxWinsoundAlertPlayer:
             )
 
     def _concat_wav_path(self, phrases: list[str]) -> Path | None:
-        """Return a filesystem path to the concatenated clip for `phrases`,
-        building and caching it on disk if it doesn't already exist.
+        """Build the stitched WAV in this session's temp dir, return its path.
 
-        Caching is keyed by the joined per-phrase filenames so repeated
-        callouts like "BOP Captain Garrick" hit the cache after the first
-        synthesis. Skipped sub-clips (missing path or missing file) are
-        logged but don't abort the build — partial output is more useful
-        than silence.
+        Within a session we cache by joined-filename key so repeat callouts
+        (same spell + same target) skip rebuild. Across sessions there's
+        nothing to cache against — the temp dir is wiped on exit. That
+        keeps the per-roster-per-dungeon combinatorial pile-up bounded by
+        whatever's actually been played in the current session, not by
+        cumulative playtime.
+
+        Skipped sub-clips (missing prerender) are logged; partial output is
+        better than silence.
         """
         usable = [p for p in phrases if self._phrase_paths.get(p)
                   and self._phrase_paths[p].exists()]
@@ -161,9 +246,7 @@ class PyttsxWinsoundAlertPlayer:
         key = "__".join(
             _phrase_to_filename(p).removesuffix(".wav") for p in usable
         )
-        concat_dir = self.cache_dir / "concat"
-        concat_dir.mkdir(parents=True, exist_ok=True)
-        target = concat_dir / f"{key}.wav"
+        target = self._session_temp / f"{key}.wav"
         if target.exists():
             return target
 
@@ -235,6 +318,15 @@ class EdgeTtsAlertPlayer(PyttsxWinsoundAlertPlayer):
             self._phrase_paths[phrase] = target
             if target.exists():
                 continue
+            # Coordinate with other threads: if another prerender call is
+            # already rendering this phrase, wait for it instead of starting
+            # a duplicate edge-tts call that would race the same MP3 path.
+            event = self._claim_phrase(phrase)
+            if event is None:
+                event = self._claim_phrase(phrase, force_owner=False)
+                if event is not None:
+                    event.wait()
+                continue
             logger.info("Prerendering (edge-tts %s) %r -> %s", self._voice, phrase, target)
             mp3 = target.with_suffix(".mp3")
             try:
@@ -256,6 +348,7 @@ class EdgeTtsAlertPlayer(PyttsxWinsoundAlertPlayer):
                     "edge-tts failed to render %r; skipping", phrase, exc_info=True,
                 )
             finally:
+                self._release_phrase(phrase)
                 if mp3.exists():
                     try:
                         mp3.unlink()

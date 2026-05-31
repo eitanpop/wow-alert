@@ -212,7 +212,7 @@ spells:
     name: "Entropic Leech"
     aliases: ["Entropic Leech", "Entroplc Leech", "Entropic Leecn"]
     severity: danger
-    phrase: ENTROPIC LEECH
+    phrase: ENTROPIC LEECH HEALING ABSORB
     cast_by: mob
     school: shadow
     interruptible: false

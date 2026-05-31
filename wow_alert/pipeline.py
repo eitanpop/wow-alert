@@ -68,6 +68,14 @@ class PipelineWorker(QObject):
     _IDLE_DELAY_MS = 50
     _WINDOW_RETRY_MS = 500
 
+    # Cap how often we ship a frame across to the UI thread for preview. A
+    # borderless 1440p capture is ~11 MB; emitting every tick means the UI
+    # thread spends ~110 MB/s on copy + resize + colorspace + QImage. 5 FPS
+    # is plenty for a "detection is alive" visualization and roughly halves
+    # the UI-side preview cost. Detection / rules / alert still run at the
+    # full target FPS — only the preview repaint is throttled.
+    _PREVIEW_MIN_INTERVAL_S = 0.2
+
     def __init__(
         self,
         deps: PipelineDeps,
@@ -94,10 +102,25 @@ class PipelineWorker(QObject):
         self._player_name: str | None = None
         self._cooldowns: dict[int, bool] = {}
         self._latest_frame: np.ndarray | None = None
+        self._preview_last_emit_s: float = 0.0
         # Minimum wall time per tick. Cast bars last 1-10 s, so even 5 FPS
         # catches them; the default 10 FPS leaves headroom for jitter without
         # starving the GPU/game render thread.
         self._min_tick_ms = max(1, int(1000 / max(1, target_fps)))
+
+    @property
+    def ocr(self) -> OcrEngine:
+        """The OCR engine the pipeline uses. Exposed so the calibration
+        flow can reuse it for the party-name read instead of constructing
+        a second engine."""
+        return self._deps.ocr
+
+    @property
+    def rule_engine(self) -> RuleEngine:
+        """The rule engine the pipeline uses. Exposed so the UI can push
+        per-tag suggestion toggles into the same engine without going
+        through a dedicated slot per setting."""
+        return self._deps.rule_engine
 
     @Slot(float)
     def set_confidence(self, value: float) -> None:
@@ -164,6 +187,8 @@ class PipelineWorker(QObject):
         the cross-thread ndarray copy that the live-preview pane requires.
         Worth tens of MB/s of memcpy on borderless 1440p captures.
         """
+        if value and not self._preview_enabled:
+            self._preview_last_emit_s = 0.0
         self._preview_enabled = value
 
     @Slot()
@@ -232,12 +257,10 @@ class PipelineWorker(QObject):
             update = self._deps.tracker.update(detections)
         except Exception as exc:
             self.error.emit("tracker", str(exc))
-            if self._preview_enabled:
-                self.frame_ready.emit(frame, detections)
+            self._maybe_emit_preview(frame, detections)
             return 0
 
-        if self._preview_enabled:
-            self.frame_ready.emit(frame, detections)
+        self._maybe_emit_preview(frame, detections)
 
         # Note: we intentionally do NOT emit `continuing_track` per tick — at
         # the capped FPS that's still many signals per second per cast bar,
@@ -248,6 +271,24 @@ class PipelineWorker(QObject):
             self._process_new_track(frame, track)
 
         return 0
+
+    def _maybe_emit_preview(
+        self, frame: np.ndarray, detections: list,
+    ) -> None:
+        """Emit `frame_ready` at most once per `_PREVIEW_MIN_INTERVAL_S`.
+
+        Detection / OCR / rules / alert continue at the worker's full target
+        FPS — only the cross-thread preview repaint is throttled, because
+        the UI render path (copy + resize + colorspace + QImage) is what
+        actually makes the window choppy when preview is on.
+        """
+        if not self._preview_enabled:
+            return
+        now = time.monotonic()
+        if now - self._preview_last_emit_s < self._PREVIEW_MIN_INTERVAL_S:
+            return
+        self._preview_last_emit_s = now
+        self.frame_ready.emit(frame, detections)
 
     def _process_new_track(self, frame: np.ndarray, track: Track) -> None:
         x1, y1, x2, y2 = track.bbox

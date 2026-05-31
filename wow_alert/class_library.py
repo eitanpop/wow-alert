@@ -121,61 +121,50 @@ class ClassActions(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-def infer_class_spec(
-    config_dir: Path,
-    matched_spell_ids: set[int],
-) -> tuple[str | None, str | None, int]:
-    """Pick the class+spec whose library covers the most matched icons.
+def _resolve_class_spec_path(
+    player_class: str, player_spec: str,
+) -> Path | None:
+    """User override path if present, else bundled default, else None."""
+    from wow_alert.paths import USER_CONFIG_DIR, defaults_config_dir
+    rel = Path("classes") / player_class / f"{player_spec}.yaml"
+    user = USER_CONFIG_DIR / rel
+    if user.exists():
+        return user
+    bundled = defaults_config_dir() / rel
+    if bundled.exists():
+        return bundled
+    return None
 
-    Walks every `config/classes/<class>/<spec>.yaml`, counts how many of
-    that file's spell IDs appear in `matched_spell_ids`, and returns the
-    winner. Tie-broken by alphabetical (class, spec) order — stable
-    across runs but otherwise arbitrary.
 
-    Returns `(class, spec, match_count)` or `(None, None, 0)` if no
-    class library matched any icon. The match count is exposed so the
-    caller can log "matched 7/8 of paladin/holy.yaml → loading Holy".
+def _layered_class_spec_paths() -> dict[tuple[str, str], Path]:
+    """Map `(class, spec)` → effective path, walking bundled + user dirs.
+
+    User overrides take precedence per `<class>/<spec>.yaml` filename.
+    Brand-new specs/classes the user adds also show up; this is what the
+    inference walk needs to scan to consider every available library.
     """
-    classes_dir = config_dir / "classes"
-    if not classes_dir.exists() or not matched_spell_ids:
-        return None, None, 0
-    best: tuple[int, str, str] | None = None
-    for class_dir in sorted(classes_dir.iterdir()):
-        if not class_dir.is_dir():
+    from wow_alert.paths import USER_CONFIG_DIR, defaults_config_dir
+    out: dict[tuple[str, str], Path] = {}
+    for root in (defaults_config_dir() / "classes", USER_CONFIG_DIR / "classes"):
+        if not root.exists():
             continue
-        for spec_path in sorted(class_dir.glob("*.yaml")):
-            try:
-                with spec_path.open("r", encoding="utf-8") as f:
-                    raw = yaml.safe_load(f) or {}
-                cfg = ClassActions.model_validate(raw)
-            except Exception:
-                logger.warning(
-                    "Skipping malformed class library %s during inference",
-                    spec_path,
-                )
+        for class_dir in root.iterdir():
+            if not class_dir.is_dir():
                 continue
-            library_ids = {a.spell_id for a in cfg.actions}
-            count = len(library_ids & matched_spell_ids)
-            if count == 0:
-                continue
-            if best is None or count > best[0]:
-                best = (count, cfg.character_class, cfg.spec)
-    if best is None:
-        return None, None, 0
-    return best[1], best[2], best[0]
+            for spec_path in class_dir.glob("*.yaml"):
+                out[(class_dir.name, spec_path.stem)] = spec_path
+    return out
 
 
 def load_class_actions(
-    config_dir: Path,
     player_class: str | None,
     player_spec: str | None,
 ) -> list[ClassAction]:
-    """Load `config/classes/<player_class>/<player_spec>.yaml`.
+    """Load the class+spec actions, user override winning over bundled.
 
     Returns an empty list when player_class/spec aren't set or the file
-    doesn't exist (with a logged warning) — the rule engine will fall
-    back to default Alerts in that case, which is correct behavior for
-    "we don't know what tools you have".
+    doesn't exist (with a logged warning) — the rule engine then falls
+    back to default Alerts.
     """
     if not player_class or not player_spec:
         logger.info(
@@ -183,18 +172,24 @@ def load_class_actions(
             "rule priorities with class-action filters will not match."
         )
         return []
-    path = config_dir / "classes" / player_class / f"{player_spec}.yaml"
-    if not path.exists():
+    path = _resolve_class_spec_path(player_class, player_spec)
+    if path is None:
         logger.warning(
-            "Class library file not found at %s — no actions available for %s/%s",
-            path, player_class, player_spec,
+            "Class library file not found for %s/%s — no actions available",
+            player_class, player_spec,
         )
         return []
     with path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     cfg = ClassActions.model_validate(raw)
+    from wow_alert.paths import USER_CONFIG_DIR
+    try:
+        path.relative_to(USER_CONFIG_DIR)
+        source = "user override"
+    except ValueError:
+        source = "bundled"
     logger.info(
-        "Loaded %d actions for %s/%s from %s",
-        len(cfg.actions), cfg.character_class, cfg.spec, path,
+        "Loaded %d actions for %s/%s from %s (%s)",
+        len(cfg.actions), cfg.character_class, cfg.spec, path.name, source,
     )
     return cfg.actions

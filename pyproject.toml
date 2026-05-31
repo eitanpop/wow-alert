@@ -5,6 +5,14 @@ description = ""
 authors = ["eitan <eitanpop@gmail.com>"]
 readme = "README.md"
 packages = [{include = "wow_alert"}]
+include = [
+    # Bundled content defaults — loader resolves these via
+    # Path(wow_alert.__file__).parent / "_defaults", so the wheel must
+    # actually contain them. Poetry's default packaging picks up .py files
+    # but not .yaml; this glob covers tag_rules + every dungeon and
+    # class/spec file under the tree.
+    { path = "wow_alert/_defaults/**/*.yaml", format = ["sdist", "wheel"] },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
@@ -23,8 +31,6 @@ pydantic = "^2.9.0"
 pyyaml = "^6.0"
 rapidfuzz = "^3.10.0"
 platformdirs = "^4.3"
-anthropic = "^0.40.0"
-python-dotenv = "^1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

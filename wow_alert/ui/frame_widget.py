@@ -54,10 +54,18 @@ class FrameWidget(QLabel):
         super().__init__(parent)
         self.setMinimumSize(640, 180)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background-color: #111;")
+        self.setWordWrap(True)
+        self.setStyleSheet("background-color: #111; color: #8a8d92; font-size: 16px;")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._last_frame: np.ndarray | None = None
         self._last_detections: list[Detection] = []
+
+    def set_placeholder(self, text: str) -> None:
+        """Guidance shown in the empty preview area before any frame arrives
+        (e.g. 'pick a dungeon to start'). Replaced by the live frame once one
+        is rendered; shown again only while no frame is present."""
+        if self._last_frame is None:
+            self.setText(text)
 
     @Slot(np.ndarray, list)
     def update_frame(self, frame: np.ndarray, detections: list[Detection]) -> None:

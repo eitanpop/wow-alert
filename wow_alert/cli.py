@@ -6,13 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-# Load .env into os.environ before anything else so downstream code (the
-# Anthropic SDK, anything reading env vars) sees the values without the user
-# having to `export` them in their shell. Silent no-op if .env is absent.
-from dotenv import load_dotenv
-
-load_dotenv()
-
+import yaml
 from PySide6.QtWidgets import QApplication
 
 from wow_alert.audio import EdgeTtsAlertPlayer, PyttsxWinsoundAlertPlayer
@@ -23,12 +17,13 @@ from wow_alert.class_library import load_class_actions
 from wow_alert.cooldown_watcher import CooldownWatcher
 from wow_alert.dedupe import CastDeduper
 from wow_alert.detector import YoloDetector
-from wow_alert.dungeon_loader import load_dungeon_config
+from wow_alert.dungeon_loader import list_dungeon_names, load_dungeon_config
 from wow_alert.ocr import RapidOcrEngine
 from wow_alert.paths import ensure_user_data_dirs
 from wow_alert.pipeline import PipelineDeps, PipelineWorker
 from wow_alert.rules import RuleEngine, YamlSpellDb
 from wow_alert.tag_rules import load_tag_rules
+from wow_alert.ui.theme import apply_theme
 from wow_alert.tracker import CastBarTracker
 from wow_alert.ui.main_window import MainWindow
 
@@ -51,9 +46,51 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _collect_full_catalog() -> list[str]:
+    """Every TTS phrase that can ever be played by content (dungeon + class
+    library + tag rules), excluding per-run roster names which render
+    on-demand. Used to warm the cache at startup so dungeon/spec switches
+    never hit the network."""
+    from wow_alert.class_library import (
+        ClassActions,
+        _layered_class_spec_paths,
+    )
+
+    phrases: set[str] = set()
+    # Stand up a throwaway RuleEngine per dungeon so we get the literal
+    # phrases inside priorities — those are author-defined strings like
+    # "kick", "stop the cast", that need TTS too.
+    for name in list_dungeon_names():
+        try:
+            spells, rules = load_dungeon_config(dungeon_name=name)
+        except Exception as exc:
+            logger.warning("Skipping dungeon %r during catalog walk: %s", name, exc)
+            continue
+        for spell in spells:
+            phrases.add(spell.name)
+            phrases.add(spell.phrase)
+        scratch_engine = RuleEngine()
+        scratch_engine.set_rules(rules)
+        phrases.update(scratch_engine.all_phrases())
+    # Walk every class+spec yaml across bundled + user dirs.
+    for spec_path in _layered_class_spec_paths().values():
+        try:
+            with spec_path.open("r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            cfg = ClassActions.model_validate(raw)
+        except Exception:
+            continue
+        for action in cfg.actions:
+            phrases.add(action.label)
+    phrases.discard("")
+    phrases.add("DANGER")  # severity-stub fallback the engine sometimes uses
+    return sorted(phrases)
+
+
 def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
     # Pass [] so QApplication doesn't try to parse wow-alert's own CLI flags.
     app = QApplication([])
+    apply_theme(app)
 
     capture = WindowCapture(
         window_title=config.window_title,
@@ -71,9 +108,8 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
     # Initial spell/rule load. No dungeon at startup — the apply_calibration
     # callback below reloads with the active dungeon once calibration is
     # available (from disk on startup, or from a fresh Calibrate click).
-    config_dir = REPO_ROOT / "config"
     initial_spells, initial_rules = load_dungeon_config(
-        config_dir, dungeon_name=config.dungeon,
+        dungeon_name=config.dungeon,
     )
     spell_db = YamlSpellDb(
         initial_spells,
@@ -81,7 +117,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
     )
     rule_engine = RuleEngine()
     rule_engine.set_rules(initial_rules)
-    rule_engine.set_tag_rules(load_tag_rules(config_dir))
+    rule_engine.set_tag_rules(load_tag_rules())
     # Class actions are loaded per calibration, not at startup — see
     # apply_calibration below. Start empty so rule_engine.decide() falls
     # back to spell-default Alerts before the first calibration.
@@ -97,17 +133,25 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
     else:
         alert_player = PyttsxWinsoundAlertPlayer(cache_dir=config.tts_cache_dir)
 
-    # Prerender what we have at startup — typically just the bare minimum
-    # since class actions and dungeon-specific phrases are loaded by
-    # apply_calibration. apply_calibration tops up the cache after each
-    # calibration accept; prerender skips files already on disk.
-    phrases = set(spell_db.all_phrases())
-    phrases.discard("")
-    if not phrases:
-        phrases = {"DANGER"}
-    phrases = sorted(phrases)
-    logger.info("Prerendering TTS phrases: %s", phrases)
-    alert_player.prerender(phrases)
+    # Proactive preload of the full content catalog at startup. Walks every
+    # dungeon's spell phrases + names, every class library's action labels,
+    # and every literal rule phrase across the codebase. After this completes
+    # (in a background thread; doesn't block UI), every dungeon switch and
+    # every callout plays from cache with zero TTS latency. The catalog is
+    # bounded (~250-300 unique phrases ≈ ~10 MB per voice) — it doesn't grow
+    # with usage, only with content additions. Roster names render
+    # separately on Load party members and are evicted per run.
+    catalog = _collect_full_catalog()
+    if catalog:
+        logger.info("Preloading %d catalog phrase(s) at startup", len(catalog))
+        # Off-thread so app boot isn't blocked. The first dungeon click can
+        # still proceed; uncached phrases pay the network cost just once
+        # in the background.
+        import threading
+        threading.Thread(
+            target=alert_player.prerender, args=(catalog,),
+            name="wow-alert-tts-warmup", daemon=True,
+        ).start()
 
     deps = PipelineDeps(
         capture=capture,
@@ -133,7 +177,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         cooldown icons, roster). Safe to call repeatedly / off the UI thread;
         prerender skips clips already on disk.
         """
-        spells, rules = load_dungeon_config(config_dir, dungeon_name=dungeon_name)
+        spells, rules = load_dungeon_config(dungeon_name=dungeon_name)
         spell_db.replace_spells(spells)
         rule_engine.set_rules(rules)
         worker.set_dungeon(dungeon_name)
@@ -150,6 +194,13 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
             )
             alert_player.prerender(sorted(needed))
 
+    # Tracks the roster names from the previous apply so the next apply can
+    # evict their TTS clips when the roster changes (pug player: new group
+    # every dungeon → old clips never come back). Initialized to whatever
+    # the auto-loaded calibration brought in, so the first apply doesn't
+    # over-evict on startup.
+    previous_roster: set[str] = set()
+
     def apply_calibration(cal: Calibration) -> None:
         """Layer cooldown recommendations onto the active dungeon.
 
@@ -159,6 +210,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         recommendations need (action labels, roster names). MainWindow handles
         the cooldown watcher separately.
         """
+        nonlocal previous_roster
         roster = cal.roster()
         dungeon = cal.dungeon_name
         roles = cal.roles_by_name()
@@ -167,7 +219,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         # an empty list — priorities that bind a ClassAction fail, and
         # decide() falls back to spell-default Alerts.
         class_actions = load_class_actions(
-            config_dir, cal.player_class, cal.player_spec,
+            cal.player_class, cal.player_spec,
         )
         rule_engine.set_class_actions(class_actions)
 
@@ -204,11 +256,25 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         load_dungeon(dungeon)  # spells, rules, dungeon context, dungeon phrases
         worker.update_calibration_context(roster, dungeon, roles, cal.player_name)
 
+        # Evict the previous roster's name clips before rendering this one.
+        # New pug each dungeon → old names are dead weight; this keeps the
+        # name-clip footprint at one group's worth, never accumulating across
+        # runs. Class-action labels are part of the bounded content catalog
+        # and are preloaded at startup, so we only evict NAMES, not labels.
+        new_roster = set(roster)
+        if cal.player_name:
+            new_roster.add(cal.player_name)
+        evict = previous_roster - new_roster
+        if evict:
+            logger.info("Evicting %d stale roster TTS clip(s)", len(evict))
+            alert_player.evict_phrases(sorted(evict))
+        previous_roster = new_roster
+
         # Prerender the extra clips recommendations add on top of the dungeon
         # phrases: class-action labels and roster names. The pipeline stitches
         # these at playback into callouts like "Arcane Salvo Sac Captain
         # Garrick". prerender skips clips already on disk.
-        needed = {a.label for a in class_actions} | set(roster)
+        needed = {a.label for a in class_actions} | new_roster
         needed.discard("")
         if needed:
             logger.info("Catching up TTS cache for %d recommendation clip(s)", len(needed))

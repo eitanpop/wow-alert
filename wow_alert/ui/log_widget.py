@@ -34,9 +34,6 @@ class LogWidget(QPlainTextEdit):
         ts = datetime.now().strftime("%H:%M:%S")
         self.appendPlainText(f"{ts} [{level}] {message}")
 
-    def debug(self, message: str) -> None:
-        self.log(message, level="DEBUG")
-
     def info(self, message: str) -> None:
         self.log(message, level="LOG")
 

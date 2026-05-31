@@ -48,10 +48,6 @@ class OcrToken:
     x_left: float
     x_right: float
 
-    @property
-    def x_center(self) -> float:
-        return (self.x_left + self.x_right) / 2.0
-
 
 def _clean(token: str) -> str:
     """Strip stray punctuation that OCR commonly adds around game text."""

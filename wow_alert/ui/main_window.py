@@ -32,27 +32,37 @@ from typing import Callable
 from wow_alert.audio import EdgeTtsAlertPlayer, PyttsxWinsoundAlertPlayer
 from wow_alert.calibration import (
     Calibration,
-    CooldownIcon,
     calibrate_read,
     load_calibration,
     save_calibration,
 )
-from wow_alert.class_library import infer_class_spec, load_class_actions
-from wow_alert.config import REPO_ROOT
+from wow_alert.class_library import load_class_actions
 from wow_alert.cooldown_watcher import CooldownWatcher
 from wow_alert.dungeon_loader import list_dungeon_names, slugify
 from wow_alert.events import Alert
 from wow_alert.icon_matcher import IconMatcher
-from wow_alert.paths import CALIBRATION_ARTIFACTS_DIR, CALIBRATION_PATH, ICONS_DIR
+from wow_alert.paths import (
+    CALIBRATION_ARTIFACTS_DIR,
+    CALIBRATION_PATH,
+    ICONS_DIR,
+    calibration_path_for,
+)
 from wow_alert.pipeline import PipelineWorker
 from wow_alert.ui._background_runner import BackgroundRunner
-from wow_alert.ui.calibration_dialog import CalibrationDialog
+from wow_alert.ui.calibration_dialog import RosterDialog
+from wow_alert.ui.config_overrides_dialog import ConfigOverridesDialog
+from wow_alert.ui.tag_suggestions_dialog import TagSuggestionsDialog
 from wow_alert.ui.frame_widget import FrameWidget
-from wow_alert.ui.icon_label_dialog import IconLabelDialog
 from wow_alert.ui.log_widget import LogWidget
 from wow_alert.ui.region_confirm_dialog import RegionConfirmDialog
+from wow_alert.ui.theme import make_separator
 
 logger = logging.getLogger(__name__)
+
+
+def _display_token(token: str) -> str:
+    """'death_knight' -> 'Death Knight'. Used by the Character picker."""
+    return " ".join(p.capitalize() for p in token.split("_"))
 
 # Curated edge-tts English neural voices for the dropdown. Not exhaustive —
 # `edge-tts --list-voices` shows the full set, and a persisted voice outside
@@ -119,10 +129,16 @@ class MainWindow(QMainWindow):
         self._thread.started.connect(self._worker.run)
         self._worker.stopped.connect(self._thread.quit)
 
-        # Cooldown watcher lives on the UI thread (QTimer-driven). It
-        # reads the worker's latest_frame and pushes a dict[str, bool]
-        # to the worker via set_cooldowns. Lifecycle is start() / stop()
-        # alongside the pipeline thread.
+        # The cooldown watcher runs on its own QThread. With 10+ calibrated
+        # icons the per-tick OCR center-text check is expensive enough that
+        # leaving it on the UI thread blocked repaints. Lifecycle is
+        # `start()` / `stop()` (signal-routed) alongside the pipeline
+        # thread; `set_icons()` is also signal-routed for thread safety.
+        if self._cooldown_watcher is not None:
+            self._cd_thread: QThread | None = QThread(self)
+            self._cooldown_watcher.moveToThread(self._cd_thread)
+        else:
+            self._cd_thread = None
 
         self._worker.frame_ready.connect(self.frame_widget.update_frame)
         self._worker.alert.connect(self._on_alert)
@@ -142,14 +158,9 @@ class MainWindow(QMainWindow):
         # dungeon swap + prerender doesn't tangle with calibrate/voice state.
         self._dungeon_thread: QThread | None = None
         self._dungeon_runner: BackgroundRunner | None = None
-        # Per-run state for the two-phase flow (frame stays valid across the
-        # region-confirm dialog so pass-2/3 uses the same image pass-1 saw).
+        # Per-run state: holds the frame across the region-confirm dialog so
+        # calibrate_read uses the same image the user just confirmed against.
         self._calibration_frame: np.ndarray | None = None
-        # Diagnostic info from the icon matcher, keyed by cooldown_icon
-        # index. Populated by _resolve_icons_and_spec, consumed by the
-        # icon-labeling dialog so it can show side-by-side references and
-        # pre-select the closest match even when below threshold.
-        self._last_match_diagnostics: list[dict] = []
 
         # Status bar shows the current calibration target ("Calibrated for:
         # John, Mary, Tank…") so the user can confirm they're configured for
@@ -157,15 +168,36 @@ class MainWindow(QMainWindow):
         self._calibration_status = QLabel("Not calibrated")
         self.statusBar().addPermanentWidget(self._calibration_status)
 
-        # Auto-load any prior calibration without re-running the LLM. The
-        # user explicitly recalibrates when they want fresh data.
-        existing = load_calibration(CALIBRATION_PATH)
+        # Auto-load the last-active character's calibration. Falls back to
+        # the legacy single-file calibration (migrating it on first save) if
+        # no per-spec file exists yet.
+        existing = self._load_active_calibration()
         if existing is not None:
             self._apply_calibration(existing, persist=False, log_to_pane=False)
         # Initialize the dungeon picker: reflect the calibrated dungeon if one
         # loaded, else load the last-picked dungeon so callouts work with no
         # calibration at all.
         self._init_dungeon_selection()
+        self._init_character_selection()
+        self._update_status()
+        self._refresh_button_state()
+
+    def _load_active_calibration(self) -> Calibration | None:
+        """Load the calibration for the QSettings-remembered character.
+
+        Three-step fallback: per-spec file → legacy single-file (migrated on
+        save) → None. The legacy fallback lets users keep their existing
+        calibration after the per-spec change ships.
+        """
+        settings = QSettings("wow-alert", "wow-alert")
+        cls = settings.value("player_class", "", type=str) or None
+        spec = settings.value("player_spec", "", type=str) or None
+        if cls and spec:
+            cal = load_calibration(calibration_path_for(cls, spec))
+            if cal is not None:
+                return cal
+        # Legacy single-file fallback for first launch after the per-spec change.
+        return load_calibration(CALIBRATION_PATH)
 
     def _build_controls(self, show_preview: bool) -> None:
         self._controls_layout = QHBoxLayout()
@@ -209,8 +241,29 @@ class MainWindow(QMainWindow):
         # saved "off" wouldn't take effect (the engine defaults to enabled).
         self._worker.set_suggestions_enabled(suggestions_on)
 
+        self._suggestions_categories_btn = QPushButton("Suggestions…")
+        self._suggestions_categories_btn.setToolTip(
+            "Pick which mechanic categories get a 'press this' callout. "
+            "Unchecked categories play just the plain alert."
+        )
+        self._suggestions_categories_btn.clicked.connect(
+            self._on_suggestions_categories_clicked,
+        )
+        # Apply persisted per-tag selection on startup so a saved subset
+        # actually takes effect against the worker's rule engine.
+        self._apply_persisted_enabled_tags()
+
+        self._configure_btn = QPushButton("Configure…")
+        self._configure_btn.setToolTip(
+            "Customize bundled dungeon / class / tag files. Per-file "
+            "Customize + Revert; bundled updates reach you for anything "
+            "not customized."
+        )
+        self._configure_btn.clicked.connect(self._on_configure_clicked)
+
         self._voice_combo = self._build_voice_combo()
         self._dungeon_combo = self._build_dungeon_combo()
+        self._class_combo, self._spec_combo = self._build_character_combos()
 
         self._debug_cb = QCheckBox("Debug")
         self._debug_cb.setChecked(True)
@@ -226,34 +279,61 @@ class MainWindow(QMainWindow):
         )
         self._clear_cal_btn.clicked.connect(self._on_clear_calibration_clicked)
 
+        self._roster_btn = QPushButton("Roster")
+        self._roster_btn.setToolTip(
+            "Edit the per-run roster. 'Load party members' reads names from "
+            "the saved party region — no re-calibration needed."
+        )
+        self._roster_btn.clicked.connect(self._on_roster_clicked)
+
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.clicked.connect(self._on_clear_clicked)
 
-        self._controls_layout.addWidget(QLabel("Dungeon:"))
-        self._controls_layout.addWidget(self._dungeon_combo)
-        self._controls_layout.addSpacing(20)
-        self._controls_layout.addWidget(conf_label)
-        self._controls_layout.addWidget(self._conf_slider)
-        self._controls_layout.addWidget(self._conf_value)
-        self._controls_layout.addSpacing(20)
-        self._controls_layout.addWidget(self._pause_btn)
-        self._controls_layout.addWidget(self._alerts_cb)
-        self._controls_layout.addWidget(self._suggestions_cb)
-        self._controls_layout.addWidget(self._preview_cb)
-        self._controls_layout.addWidget(self._debug_cb)
         self._apply_voice_btn = QPushButton("Apply")
         self._apply_voice_btn.setToolTip(
             "Render the selected voice and switch to it (takes a few seconds)."
         )
         self._apply_voice_btn.setEnabled(self._voice_combo.isEnabled())
         self._apply_voice_btn.clicked.connect(self._on_apply_voice)
-        self._controls_layout.addWidget(QLabel("Voice:"))
-        self._controls_layout.addWidget(self._voice_combo)
-        self._controls_layout.addWidget(self._apply_voice_btn)
-        self._controls_layout.addWidget(self._calibrate_btn)
-        self._controls_layout.addWidget(self._clear_cal_btn)
+
+        # Grouped left→right by workflow, with thin rules between groups:
+        #   Dungeon (callouts) │ Calibration (recommendations) │ Run │ Audio
+        # Diagnostics (confidence / preview / debug / clear log) get pushed to
+        # the far right so the primary workflow reads first.
+        char_label = QLabel("Character:")
+        char_label.setToolTip(
+            "Class and spec. Switching loads that character's saved "
+            "calibration (cooldown bar + party region)."
+        )
+        self._class_combo.setMinimumWidth(120)
+        self._spec_combo.setMinimumWidth(110)
+        self._add_control_group(char_label, self._class_combo, self._spec_combo)
+        self._controls_layout.addWidget(make_separator())
+        dungeon_label = QLabel("Dungeon:")
+        dungeon_label.setToolTip(
+            "Pick a dungeon to get cast-bar callouts — no calibration needed."
+        )
+        self._dungeon_combo.setMinimumWidth(180)
+        self._add_control_group(dungeon_label, self._dungeon_combo, self._roster_btn)
+        self._controls_layout.addWidget(make_separator())
+        self._add_control_group(
+            self._calibrate_btn, self._clear_cal_btn,
+            self._suggestions_cb, self._suggestions_categories_btn,
+            self._configure_btn,
+        )
+        self._controls_layout.addWidget(make_separator())
+        self._add_control_group(self._pause_btn, self._alerts_cb)
+        self._controls_layout.addWidget(make_separator())
+        self._add_control_group(QLabel("Voice:"), self._voice_combo, self._apply_voice_btn)
         self._controls_layout.addStretch(1)
-        self._controls_layout.addWidget(self._clear_btn)
+        self._add_control_group(conf_label, self._conf_slider, self._conf_value)
+        self._controls_layout.addWidget(make_separator())
+        self._add_control_group(self._preview_cb, self._debug_cb, self._clear_btn)
+
+    def _add_control_group(self, *widgets) -> None:
+        """Add a run of related widgets to the control bar in order."""
+        for w in widgets:
+            self._controls_layout.addWidget(w)
 
     def _build_voice_combo(self) -> QComboBox:
         """Dropdown of edge-tts voices. Disabled when the active player isn't
@@ -301,10 +381,107 @@ class MainWindow(QMainWindow):
             "layers cooldown recommendations on top."
         )
         combo.addItem("(none)", userData=None)
-        for name in list_dungeon_names(REPO_ROOT / "config"):
+        for name in list_dungeon_names():
             combo.addItem(name, userData=name)
         combo.currentIndexChanged.connect(self._on_dungeon_changed)
         return combo
+
+    def _build_character_combos(self) -> tuple[QComboBox, QComboBox]:
+        """Top-level Class + Spec dropdowns.
+
+        Only the class→spec repopulation is wired here; the
+        `_on_character_changed` signal is connected later, after the combos
+        are assigned to `self` and the initial value is restored. Otherwise
+        the addItem/setCurrentIndex chain runs before `self._class_combo`
+        exists and the slot crashes.
+        """
+        from wow_alert.calibration import WOW_CLASSES, WOW_SPECS
+
+        class_combo = QComboBox()
+        class_combo.addItem("(none)", userData=None)
+        for cls in WOW_CLASSES:
+            class_combo.addItem(_display_token(cls), userData=cls)
+        spec_combo = QComboBox()
+
+        def repopulate_spec(*_args) -> None:
+            cls = class_combo.currentData()
+            spec_combo.clear()
+            spec_combo.addItem("(none)", userData=None)
+            for spec in WOW_SPECS.get(cls, []):
+                spec_combo.addItem(_display_token(spec), userData=spec)
+
+        class_combo.currentIndexChanged.connect(repopulate_spec)
+        repopulate_spec()
+        return class_combo, spec_combo
+
+    def _init_character_selection(self) -> None:
+        """Restore the saved character on startup, then wire the
+        on-change handler. Signals are blocked during init so a stale
+        selection doesn't trigger a reload of the calibration that was
+        just loaded."""
+        settings = QSettings("wow-alert", "wow-alert")
+        cls = (
+            (self._calibration.player_class if self._calibration else None)
+            or settings.value("player_class", "", type=str) or None
+        )
+        spec = (
+            (self._calibration.player_spec if self._calibration else None)
+            or settings.value("player_spec", "", type=str) or None
+        )
+        self._class_combo.blockSignals(True)
+        self._spec_combo.blockSignals(True)
+        try:
+            if cls:
+                idx = self._class_combo.findData(cls)
+                if idx >= 0:
+                    self._class_combo.setCurrentIndex(idx)
+            # Spec combo's contents depend on class — repopulate once now
+            # with signals blocked, then pre-select the spec.
+            from wow_alert.calibration import WOW_SPECS
+            self._spec_combo.clear()
+            self._spec_combo.addItem("(none)", userData=None)
+            for s in WOW_SPECS.get(cls, []):
+                self._spec_combo.addItem(_display_token(s), userData=s)
+            if spec:
+                idx = self._spec_combo.findData(spec)
+                if idx >= 0:
+                    self._spec_combo.setCurrentIndex(idx)
+        finally:
+            self._class_combo.blockSignals(False)
+            self._spec_combo.blockSignals(False)
+        # Connect now, after the initial restore. Earlier wiring would have
+        # fired `_on_character_changed` during widget construction (before
+        # `self._class_combo` even exists), crashing startup.
+        self._class_combo.currentIndexChanged.connect(self._on_character_changed)
+        self._spec_combo.currentIndexChanged.connect(self._on_character_changed)
+        # Spec combo also greys itself when no class is picked; keep that in sync.
+        self._class_combo.currentIndexChanged.connect(
+            lambda _idx: self._refresh_button_state()
+        )
+
+    @Slot()
+    def _on_character_changed(self) -> None:
+        """Class or spec dropdown changed: persist + load that calibration."""
+        cls = self._class_combo.currentData()
+        spec = self._spec_combo.currentData()
+        settings = QSettings("wow-alert", "wow-alert")
+        settings.setValue("player_class", cls or "")
+        settings.setValue("player_spec", spec or "")
+        if not cls or not spec:
+            return
+        cal = load_calibration(calibration_path_for(cls, spec))
+        if cal is None:
+            self.log_widget.info(
+                f"no calibration for {cls}/{spec} yet — click Calibrate to set "
+                "regions and detect icons"
+            )
+            # Drop the prior calibration so the engine doesn't carry stale icons
+            # from the previous character into the new one.
+            empty = Calibration(player_class=cls, player_spec=spec)
+            self._apply_calibration(empty, persist=False, log_to_pane=False)
+            return
+        self.log_widget.info(f"loaded calibration for {cls}/{spec}")
+        self._apply_calibration(cal, persist=False, log_to_pane=True)
 
     def _init_dungeon_selection(self) -> None:
         """Set the picker's initial value once startup state is known. A
@@ -341,6 +518,8 @@ class MainWindow(QMainWindow):
 
     def start(self) -> None:
         self._thread.start()
+        if self._cd_thread is not None:
+            self._cd_thread.start()
         if self._cooldown_watcher is not None:
             self._cooldown_watcher.start()
         self.log_widget.info("worker started")
@@ -351,6 +530,9 @@ class MainWindow(QMainWindow):
             self._cooldown_watcher.stop()
         self._thread.quit()
         self._thread.wait(2000)
+        if self._cd_thread is not None:
+            self._cd_thread.quit()
+            self._cd_thread.wait(2000)
         super().closeEvent(event)
 
     @Slot(int)
@@ -380,10 +562,70 @@ class MainWindow(QMainWindow):
     def _on_suggestions_toggle(self, checked: bool) -> None:
         self._worker.set_suggestions_enabled(checked)
         QSettings("wow-alert", "wow-alert").setValue("suggestions_enabled", checked)
+        self._update_status()
         self.log_widget.info(
             f"suggestions {'on' if checked else 'off'}"
             + ("" if checked else " — alert phrases only, no cooldown recs")
         )
+
+    @Slot()
+    def _on_suggestions_categories_clicked(self) -> None:
+        """Open the per-tag suggestion dialog. On accept, push the new
+        subset to the rule engine and persist the names to QSettings."""
+        tag_rules = self._worker.rule_engine.tag_rules
+        if not tag_rules.precedence:
+            QMessageBox.information(
+                self, "No tag rules loaded",
+                "tag_rules.yaml is empty — there are no tag categories to "
+                "configure. Add tags to the config or load a dungeon first.",
+            )
+            return
+        settings = QSettings("wow-alert", "wow-alert")
+        stored = settings.value("enabled_tags", None)
+        if stored is None:
+            enabled: set[str] | None = None
+        else:
+            # QSettings round-trips lists as Python lists on Windows; coerce.
+            enabled = set(stored) if isinstance(stored, (list, tuple)) else None
+        dialog = TagSuggestionsDialog(tag_rules, enabled, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_enabled = dialog.result_enabled_tags()
+        self._worker.rule_engine.set_enabled_tags(new_enabled)
+        settings.setValue("enabled_tags", sorted(new_enabled))
+        skipped = sorted(set(tag_rules.precedence) - new_enabled)
+        if skipped:
+            self.log_widget.info(
+                f"tag suggestions: enabled {len(new_enabled)} of "
+                f"{len(tag_rules.precedence)} categories; off: {', '.join(skipped)}"
+            )
+        else:
+            self.log_widget.info("tag suggestions: all categories enabled")
+
+    @Slot()
+    def _on_configure_clicked(self) -> None:
+        """Open the Configuration overrides dialog. Changes to override
+        files don't take effect until the next dungeon/class load — show
+        a hint reminding the user to restart after editing if they want
+        the changes live immediately."""
+        dialog = ConfigOverridesDialog(parent=self)
+        dialog.exec()
+        self.log_widget.info(
+            "config overrides: restart the app (or re-pick the dungeon / "
+            "spec) to pick up edits"
+        )
+
+    def _apply_persisted_enabled_tags(self) -> None:
+        """Restore the saved per-tag subset on startup. Runs after the
+        rule engine has been wired (the worker holds it) so the engine
+        sees the user's filter from tick 1."""
+        settings = QSettings("wow-alert", "wow-alert")
+        stored = settings.value("enabled_tags", None)
+        if stored is None:
+            return  # default: all enabled
+        if not isinstance(stored, (list, tuple)):
+            return
+        self._worker.rule_engine.set_enabled_tags(set(stored))
 
     @Slot()
     def _on_apply_voice(self) -> None:
@@ -451,6 +693,14 @@ class MainWindow(QMainWindow):
             return
         dungeon = self._dungeon_combo.currentData()
         QSettings("wow-alert", "wow-alert").setValue("dungeon", dungeon or "")
+        # Keep the in-memory calibration's dungeon_name aligned with the
+        # picker. Otherwise the auto-Roster flow that opens after this load
+        # carries the OLD dungeon through to apply_calibration, which then
+        # reloads the old dungeon's spells right back over the new one.
+        if self._calibration is not None and self._calibration.dungeon_name != dungeon:
+            self._calibration = self._calibration.model_copy(
+                update={"dungeon_name": dungeon},
+            )
         self._dungeon_combo.setEnabled(False)
         self.log_widget.info(f"loading dungeon {dungeon or '(none)'}…")
 
@@ -473,7 +723,18 @@ class MainWindow(QMainWindow):
     def _on_dungeon_load_done(self, _result) -> None:
         self._dungeon_combo.setEnabled(True)
         dungeon = self._dungeon_combo.currentData()
+        self._update_status()
         self.log_widget.info(f"dungeon ready: {dungeon or '(none)'}")
+        # Pug flow: new dungeon = new group. Clear the prior roster and pop
+        # the Roster dialog so the user can capture this run's group with
+        # one click of "Load party members". Skipped when no dungeon is
+        # selected (user picked "(none)") or no party region is calibrated
+        # (no point opening a Roster dialog that can't OCR anything).
+        if dungeon and self._calibration and self._calibration.party_region:
+            self._calibration = self._calibration.model_copy(update={
+                "party_members": [], "player_name": None,
+            })
+            self._on_roster_clicked()
 
     @Slot(str)
     def _on_dungeon_load_failed(self, message: str) -> None:
@@ -489,6 +750,24 @@ class MainWindow(QMainWindow):
     def _on_debug_toggle(self, checked: bool) -> None:
         self.log_widget.set_show_debug(checked)
         self.log_widget.info(f"debug {'on' if checked else 'off'}")
+
+    @Slot()
+    def _on_roster_clicked(self) -> None:
+        """Open the Roster dialog so the user can refresh + edit team
+        members for this dungeon run. Opens with the saved calibration as
+        backing — even when there's no UI calibration yet, an empty Roster
+        dialog still lets the user type names manually."""
+        cal = self._calibration or Calibration()
+        dialog = RosterDialog(
+            cal,
+            frame_provider=self._worker.latest_frame,
+            ocr=self._worker.ocr,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_cal = dialog.result_calibration()
+        self._apply_calibration(new_cal, persist=True, log_to_pane=True)
 
     @Slot()
     def _on_clear_clicked(self) -> None:
@@ -508,16 +787,22 @@ class MainWindow(QMainWindow):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            CALIBRATION_PATH.unlink(missing_ok=True)
-        except OSError as exc:
-            self.log_widget.error(f"couldn't delete saved calibration file: {exc}")
+        # Delete the active per-spec file (or the legacy single file if no
+        # class/spec is set). Best-effort — a stale file is harmless.
+        cls = self._class_combo.currentData()
+        spec = self._spec_combo.currentData()
+        for path in {calibration_path_for(cls, spec), CALIBRATION_PATH}:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                self.log_widget.error(f"couldn't delete {path}: {exc}")
         self._calibration = None
         if self._cooldown_watcher is not None:
             self._cooldown_watcher.set_icons([])
         if self._on_clear_calibration is not None:
             self._on_clear_calibration(self._dungeon_combo.currentData())
-        self._calibration_status.setText("Not calibrated")
+        self._update_status()
+        self._refresh_button_state()
         self.log_widget.info("calibration cleared — callouts only (dungeon kept)")
 
     @Slot(object)
@@ -541,13 +826,8 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_calibrate_clicked(self) -> None:
         """Open the region-confirm dialog so the user can draw the
-        party-frame and cooldown-manager regions, then kick off Pass 2
-        (party-name read) against the confirmed regions.
-
-        No LLM-driven region locate: the previous Pass 1 call placed
-        regions unreliably (often top-left of an ultrawide source far
-        from the actual UI), so the user redrew them every time anyway.
-        Dropping the call saves an API call + ~5 s of latency.
+        party-frame and cooldown-manager regions, then read party names
+        and template-match cooldown icons against the confirmed regions.
         """
         if self._calibration_thread is not None:
             self.log_widget.info("calibration already in progress")
@@ -571,6 +851,8 @@ class MainWindow(QMainWindow):
         through to the editor's centered-rectangle default."""
         party_region = self._derive_region_from_prior("party")
         cooldown_region = self._derive_region_from_prior("cooldown")
+        prior_class = self._calibration.player_class if self._calibration else None
+        prior_spec = self._calibration.player_spec if self._calibration else None
         if party_region or cooldown_region:
             self._calibration_status.setText("Calibrating… confirm regions")
             self.log_widget.info(
@@ -586,6 +868,8 @@ class MainWindow(QMainWindow):
             image_bgr=frame,
             party_region=party_region,
             cooldown_region=cooldown_region,
+            player_class=prior_class,
+            player_spec=prior_spec,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -594,8 +878,17 @@ class MainWindow(QMainWindow):
             return
 
         party_region, cooldown_region = dialog.result_regions()
+        # The top-level Character picker is the primary source for class+spec.
+        # The region dialog's class/spec controls override it for the (rare)
+        # case of calibrating for a different character.
+        dialog_cls, dialog_spec = dialog.result_class_spec()
+        player_class = dialog_cls or self._class_combo.currentData()
+        player_spec = dialog_spec or self._spec_combo.currentData()
         # The dungeon comes from the top-level picker — the single source.
         dungeon_name = self._dungeon_combo.currentData()
+        # Build a class-restricted matcher so calibrate_read's template-match
+        # path only slides icons that could be on this character's bar.
+        matcher = self._build_calibration_matcher(player_class, player_spec)
         self._calibration_status.setText("Calibrating… reading party + icons")
         self.log_widget.info("calibrating: reading party names + finding icons")
         self._start_runner(
@@ -603,245 +896,171 @@ class MainWindow(QMainWindow):
                 frame,
                 party_region=party_region,
                 cooldown_region=cooldown_region,
+                matcher=matcher,
                 dungeon_name=dungeon_name,
+                player_class=player_class,
+                player_spec=player_spec,
                 prior_notes="",
             ),
             on_completed=self._on_read_completed,
         )
 
+    def _build_calibration_matcher(
+        self, player_class: str | None, player_spec: str | None,
+    ) -> IconMatcher | None:
+        """Build a class-restricted IconMatcher for `calibrate_read`.
+
+        Returns None when class/spec aren't set — calibrate_read then skips
+        the cooldown region (no icons until the user picks a class/spec and
+        recalibrates). When the class library can't be loaded, fall back to
+        the full icon DB so we at least get something useful.
+        """
+        if not player_class or not player_spec:
+            return None
+        actions = load_class_actions(player_class, player_spec)
+        allowed = {a.spell_id for a in actions} if actions else None
+        matcher = IconMatcher(ICONS_DIR, allowed_spell_ids=allowed)
+        if len(matcher) == 0:
+            self.log_widget.error(
+                f"no icons in {ICONS_DIR} matching {player_class}/{player_spec} — "
+                "cooldown tracking will be empty. Run: "
+                "python -m wow_alert.tools.fetch_icons"
+            )
+            return None
+        return matcher
+
     @Slot(object)
     def _on_read_completed(self, cal: Calibration) -> None:
-        """Pass 2/3 done — match icons against the local DB, auto-detect
-        the class+spec from the matches, open the edit dialog, then the
-        icon-labeling dialog so the user can refine the matcher's
-        references against their own client rendering."""
+        """Calibrate read done — class+spec, regions, and template-matched
+        icons are saved. Roster is edited separately via the Roster button
+        (lighter, runs per-dungeon)."""
         frame = self._calibration_frame
         if frame is not None:
-            cal = self._resolve_icons_and_spec(cal, frame)
-            dialog = CalibrationDialog(cal, frame, parent=self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                cal = dialog.result_calibration()
-            else:
-                self.log_widget.info("calibration discarded — keeping previous")
-                self._finish_calibration_flow(success=False)
-                return
-            cal = self._label_icons(cal, frame)
+            self._save_calibration_artifacts(frame, cal)
+        # Carry over the prior roster so a re-calibrate doesn't wipe it. The
+        # roster is per-run, not per-UI-calibration.
+        if self._calibration is not None:
+            cal = cal.model_copy(update={
+                "party_members": self._calibration.party_members,
+                "player_name": self._calibration.player_name,
+            })
         self._apply_calibration(cal, persist=True, log_to_pane=True)
         self._finish_calibration_flow(success=True)
 
-    def _label_icons(self, cal: Calibration, frame) -> Calibration:
-        """Open the icon-labeling dialog if there's a class library to
-        label against. Cancel keeps the calibration as-is (no reference
-        files written); accept writes per-icon PNGs and returns a
-        Calibration with the user-confirmed spell_ids."""
-        if not cal.player_class or not cal.player_spec:
-            self.log_widget.info(
-                "icon labeling skipped — no class/spec confirmed"
-            )
-            return cal
-        if not cal.cooldown_icons:
-            return cal
-        actions = load_class_actions(
-            REPO_ROOT / "config", cal.player_class, cal.player_spec,
-        )
-        if not actions:
-            self.log_widget.info(
-                "icon labeling skipped — class library empty for "
-                f"{cal.player_class}/{cal.player_spec}"
-            )
-            return cal
-        icon_dir = ICONS_DIR
-        dialog = IconLabelDialog(
-            cal, frame, actions, icon_dir,
-            diagnostics=self._last_match_diagnostics,
-            parent=self,
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            self.log_widget.info(
-                "icon labeling cancelled — keeping existing icon references"
-            )
-            return cal
-        labeled_cal, written = dialog.apply_labels()
-        self.log_widget.info(
-            f"icon labels applied: {written} reference PNG(s) written to "
-            f"{ICONS_DIR}"
-        )
-        return labeled_cal
-
-    def _derive_region_from_prior(
-        self, kind: str,
-    ) -> tuple[int, int, int, int] | None:
-        """Compute a bounding box around all party_members (or all
-        cooldown_icons) from the previously-saved calibration. Used as
-        the starting region for a re-calibrate so the user doesn't
-        have to redraw from scratch."""
-        if self._calibration is None:
-            return None
-        if kind == "party":
-            items = self._calibration.party_members
-        elif kind == "cooldown":
-            items = self._calibration.cooldown_icons
-        else:
-            return None
-        if not items:
-            return None
-        xs: list[int] = []
-        ys: list[int] = []
-        for item in items:
-            x1, y1, x2, y2 = item.bbox
-            xs.extend([x1, x2])
-            ys.extend([y1, y2])
-        # 10 px padding around the cluster so the user has a little
-        # slack when adjusting.
-        return (min(xs) - 10, min(ys) - 10, max(xs) + 10, max(ys) + 10)
-
-    def _resolve_icons_and_spec(
-        self, cal: Calibration, frame,
-    ) -> Calibration:
-        """Run the icon matcher on the calibrated bboxes and override the
-        Calibration's player_class / player_spec with whatever class
-        library best fits the matched icons.
-
-        Surfaces both pieces of state in the log pane and saves debug
-        artifacts (per-icon crops + manifest) under
-        `%LOCALAPPDATA%\\wow-alert\\calibration_artifacts\\<timestamp>`
-        so you can inspect what the LLM bboxes captured when matching
-        underperforms.
-        """
-        icon_dir = ICONS_DIR
-        matcher = IconMatcher(icon_dir)
-        if len(matcher) == 0:
-            self.log_widget.error(
-                f"no icons in {icon_dir} — cooldown tracking will be "
-                "disabled. Run: python -m wow_alert.tools.fetch_icons"
-            )
-            return cal
-
-        # Pass 1: match against the full icon DB to figure out which
-        # class+spec the player is on.
-        per_icon = self._match_with_diagnostics(cal, frame, matcher)
-        matched_ids = {ic.spell_id for ic, _ in per_icon if ic.spell_id is not None}
-        cls, spec, count = infer_class_spec(REPO_ROOT / "config", matched_ids)
-
-        # Pass 2: re-match restricted to just the detected class's
-        # spell IDs. Stops cross-class false references — e.g., paladin
-        # icons labeled in a previous session showing up as closest for
-        # a monk character's icons.
-        if cls and spec:
-            actions = load_class_actions(REPO_ROOT / "config", cls, spec)
-            allowed = {a.spell_id for a in actions}
-            restricted = IconMatcher(icon_dir, allowed_spell_ids=allowed)
-            if len(restricted) > 0:
-                per_icon = self._match_with_diagnostics(cal, frame, restricted)
-                matcher = restricted
-            cal = cal.model_copy(update={"player_class": cls, "player_spec": spec})
-            self.log_widget.info(
-                f"class auto-detect: {cls}/{spec} ({count} matches in pass 1; "
-                f"re-matched against {len(restricted)} {cls}/{spec} refs)"
-            )
-        else:
-            self.log_widget.error(
-                "could not auto-detect class+spec from icons — pick "
-                "manually in the next dialog"
-            )
-
-        cal = cal.model_copy(
-            update={
-                "cooldown_icons": [ic for ic, _ in per_icon],
-            }
-        )
-        # Stash diagnostics for the labeling dialog. Indexed parallel to
-        # cal.cooldown_icons.
-        self._last_match_diagnostics = [d for _, d in per_icon]
-        artifact_dir = self._save_calibration_artifacts(frame, per_icon, matcher)
-        if artifact_dir is not None:
-            self.log_widget.info(f"saved calibration artifacts → {artifact_dir}")
-
-        matched_ids = {ic.spell_id for ic, _ in per_icon if ic.spell_id is not None}
-        total = len(per_icon)
-        self.log_widget.info(
-            f"icon matcher: {len(matched_ids)}/{total} icons identified"
-        )
-        return cal
-
-    def _match_with_diagnostics(self, cal: Calibration, frame, matcher: IconMatcher):
-        """Run the matcher per icon and emit a UI log line for each.
-
-        Returns a list of `(updated_CooldownIcon, diagnostic_dict)`. The
-        diagnostic carries the bbox-crop image, closest spell_id, score,
-        and passed flag so the artifact-saving step doesn't have to re-run
-        the matcher.
-        """
-        h, w = frame.shape[:2]
-        out = []
-        for idx, icon in enumerate(cal.cooldown_icons):
-            x1, y1, x2, y2 = icon.bbox
-            x1c, y1c = max(0, min(x1, w)), max(0, min(y1, h))
-            x2c, y2c = max(0, min(x2, w)), max(0, min(y2, h))
-            if x2c - x1c < 4 or y2c - y1c < 4:
-                self.log_widget.error(
-                    f"  icon #{idx} at {icon.bbox}: degenerate bbox"
-                )
-                out.append((icon, {"crop": None, "closest": None, "score": 0.0, "passed": False}))
-                continue
-            crop = frame[y1c:y2c, x1c:x2c]
-            closest, score, passed = matcher.match(crop)
-            diag = {"crop": crop, "closest": closest, "score": score, "passed": passed}
-            if passed:
-                self.log_widget.info(
-                    f"  icon #{idx} at {icon.bbox} → spell_id {closest} (score {score:.2f}) MATCH"
-                )
-                out.append((CooldownIcon(bbox=icon.bbox, spell_id=closest), diag))
-            else:
-                closest_str = str(closest) if closest is not None else "—"
-                self.log_widget.error(
-                    f"  icon #{idx} at {icon.bbox}: closest={closest_str} "
-                    f"score={score:.2f} (threshold {matcher.threshold:.2f}) BELOW"
-                )
-                out.append((icon, diag))
-        return out
-
-    def _save_calibration_artifacts(self, frame, per_icon, matcher: IconMatcher):
-        """Write per-icon crops + a manifest text file under
-        `CALIBRATION_ARTIFACTS_DIR/<timestamp>/`. Returns the directory
-        path on success or None on failure (silent — diagnostics
-        shouldn't break calibration)."""
+    def _save_calibration_artifacts(self, frame, cal: Calibration):
+        """Write per-icon crops + a manifest + an annotated overview under
+        `CALIBRATION_ARTIFACTS_DIR/<timestamp>/`. The overview lets the user
+        eyeball whether all icons on their cooldown manager got matched, or
+        whether some are present but didn't clear the threshold. Best-effort
+        — a failure here doesn't break calibration."""
         try:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             artifact_dir = CALIBRATION_ARTIFACTS_DIR / stamp
             artifact_dir.mkdir(parents=True, exist_ok=True)
-            # Full frame so you can verify Pass 1's region detection.
             cv2.imwrite(str(artifact_dir / "frame.png"), frame)
-            # Per-icon: crop + reference of the closest match (when known).
-            manifest_lines = [
+            h, w = frame.shape[:2]
+            # Annotated overview: the user-drawn cooldown region (orange) and
+            # each matched icon's bbox (green) with its spell_id label.
+            overview = frame.copy()
+            if cal.cooldown_region:
+                rx1, ry1, rx2, ry2 = cal.cooldown_region
+                cv2.rectangle(overview, (rx1, ry1), (rx2, ry2), (0, 165, 255), 2)
+            for icon in cal.cooldown_icons:
+                x1, y1, x2, y2 = icon.bbox
+                cv2.rectangle(overview, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(
+                    overview, str(icon.spell_id),
+                    (x1, max(15, y1 - 4)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA,
+                )
+            # Crop the overview to the cooldown region (+ a margin) so the
+            # user doesn't have to scroll a full ultrawide capture to inspect.
+            if cal.cooldown_region:
+                rx1, ry1, rx2, ry2 = cal.cooldown_region
+                pad = 40
+                ox1 = max(0, rx1 - pad)
+                oy1 = max(0, ry1 - pad)
+                ox2 = min(w, rx2 + pad)
+                oy2 = min(h, ry2 + pad)
+                cv2.imwrite(
+                    str(artifact_dir / "overview_cooldown.png"),
+                    overview[oy1:oy2, ox1:ox2],
+                )
+            cv2.imwrite(str(artifact_dir / "overview_full.png"), overview)
+            lines = [
                 f"# Calibration debug ({stamp})",
-                f"# Matcher threshold: {matcher.threshold:.2f}",
-                "# idx  bbox                                   closest_spell_id  score  passed  crop_file",
+                f"# {len(cal.cooldown_icons)} icons matched",
+                "# idx  bbox                                   spell_id  crop_file",
             ]
-            for idx, (icon, diag) in enumerate(per_icon):
-                crop = diag["crop"]
-                closest = diag["closest"]
-                score = diag["score"]
-                passed = diag["passed"]
+            for idx, icon in enumerate(cal.cooldown_icons):
+                x1, y1, x2, y2 = icon.bbox
+                x1c, y1c = max(0, min(x1, w)), max(0, min(y1, h))
+                x2c, y2c = max(0, min(x2, w)), max(0, min(y2, h))
                 crop_name = f"icon_{idx:02d}_bbox.png"
-                if crop is not None:
-                    cv2.imwrite(str(artifact_dir / crop_name), crop)
-                if closest is not None:
-                    ref_src = ICONS_DIR / f"{closest}.png"
-                    if ref_src.exists():
-                        ref_dst = artifact_dir / f"icon_{idx:02d}_closest_{closest}.png"
-                        ref_dst.write_bytes(ref_src.read_bytes())
-                manifest_lines.append(
+                if x2c - x1c > 0 and y2c - y1c > 0:
+                    cv2.imwrite(
+                        str(artifact_dir / crop_name), frame[y1c:y2c, x1c:x2c],
+                    )
+                lines.append(
                     f"{idx:>3d}  {str(icon.bbox):<38}  "
-                    f"{str(closest):<16}  {score:5.2f}  {str(passed):<6}  {crop_name}"
+                    f"{icon.spell_id!s:<8}  {crop_name}"
                 )
             (artifact_dir / "manifest.txt").write_text(
-                "\n".join(manifest_lines), encoding="utf-8",
+                "\n".join(lines), encoding="utf-8",
             )
-            return artifact_dir
+            self.log_widget.info(f"saved calibration artifacts → {artifact_dir}")
         except Exception as exc:
             logger.warning("Failed to save calibration artifacts: %s", exc)
-            return None
+
+    def _derive_region_from_prior(
+        self, kind: str,
+    ) -> tuple[int, int, int, int] | None:
+        """Default region for a re-calibrate.
+
+        Source order: this character's saved calibration → another spec on
+        the same class → any other character's calibration. UI layout
+        rarely changes between specs on the same character, so inheriting
+        sibling regions saves the user from redrawing every time.
+        """
+        # Prefer the explicit region field (newer format), fall back to a
+        # bounding box around the existing items (older format).
+        def _from_cal(cal: Calibration) -> tuple[int, int, int, int] | None:
+            if kind == "party":
+                if cal.party_region:
+                    return cal.party_region
+                items = cal.party_members
+            elif kind == "cooldown":
+                if cal.cooldown_region:
+                    return cal.cooldown_region
+                items = cal.cooldown_icons
+            else:
+                return None
+            if not items:
+                return None
+            xs: list[int] = []
+            ys: list[int] = []
+            for item in items:
+                x1, y1, x2, y2 = item.bbox
+                xs.extend([x1, x2])
+                ys.extend([y1, y2])
+            return (min(xs) - 10, min(ys) - 10, max(xs) + 10, max(ys) + 10)
+
+        if self._calibration is not None:
+            r = _from_cal(self._calibration)
+            if r is not None:
+                return r
+        # Sibling-spec fallback: scan saved calibrations for the same class.
+        cls = self._class_combo.currentData()
+        if cls:
+            from wow_alert.calibration import WOW_SPECS
+            for sibling_spec in WOW_SPECS.get(cls, []):
+                cal = load_calibration(calibration_path_for(cls, sibling_spec))
+                if cal is None:
+                    continue
+                r = _from_cal(cal)
+                if r is not None:
+                    return r
+        return None
 
     def _log_per_action_match_state(
         self, cal: Calibration, matched_ids: set[int],
@@ -857,7 +1076,7 @@ class MainWindow(QMainWindow):
         if not cal.player_class or not cal.player_spec:
             return
         actions = load_class_actions(
-            REPO_ROOT / "config", cal.player_class, cal.player_spec,
+            cal.player_class, cal.player_spec,
         )
         if not actions:
             return
@@ -908,18 +1127,12 @@ class MainWindow(QMainWindow):
         self._calibration_thread = None
         self._calibration_runner = None
 
-    def _abort_calibration(self, reason: str) -> None:
-        self.log_widget.error(f"calibration aborted: {reason}")
-        self._finish_calibration_flow(success=False)
-
     def _finish_calibration_flow(self, *, success: bool) -> None:
         """End-of-flow cleanup, success or not. Resets per-run state and
         re-enables the Calibrate button."""
         self._calibration_frame = None
         if not success:
-            self._calibration_status.setText(
-                self._format_calibration_status(self._calibration)
-            )
+            self._update_status()
         self._calibrate_btn.setEnabled(True)
 
     def _apply_calibration(
@@ -940,10 +1153,14 @@ class MainWindow(QMainWindow):
             self._cooldown_watcher.set_icons(cal.cooldown_icons)
         if self._on_calibration_apply is not None:
             self._on_calibration_apply(cal)
-        self._calibration_status.setText(self._format_calibration_status(cal))
+        self._update_status()
         if persist:
+            # Save to the per-spec path so each character has its own file.
+            # Falls back to the legacy single-file path when class/spec aren't
+            # set (rare, only first-time-no-character calibrations).
+            target = calibration_path_for(cal.player_class, cal.player_spec)
             try:
-                save_calibration(cal, CALIBRATION_PATH)
+                save_calibration(cal, target)
             except Exception as exc:
                 self.log_widget.error(f"failed to save calibration: {exc}")
         if log_to_pane:
@@ -956,23 +1173,96 @@ class MainWindow(QMainWindow):
             )
             if cal.notes:
                 self.log_widget.info(f"calibration notes: {cal.notes}")
-            # Per-action tracked/untracked. Runs here (not in
-            # _resolve_icons_and_spec) so it fires regardless of whether
-            # auto-detect succeeded — the dialog may have set the spec
-            # manually after we failed to infer it.
+            # Per-action tracked/untracked list — what the engine can reason
+            # about for this character vs what will fall through to the
+            # spell's default phrase.
             matched_ids = {
                 ic.spell_id for ic in cal.cooldown_icons if ic.spell_id is not None
             }
             self._log_per_action_match_state(cal, matched_ids)
+        self._refresh_button_state()
 
-    @staticmethod
-    def _format_calibration_status(cal: Calibration | None) -> str:
-        if cal is None:
-            return "Not calibrated"
-        names = cal.roster()
-        ts = cal.calibrated_at.strftime("%H:%M:%S")
-        prefix = f"[{cal.dungeon_name}] " if cal.dungeon_name else ""
-        if not names:
-            return f"{prefix}Calibrated (no party detected) at {ts}"
-        joined = ", ".join(names)
-        return f"{prefix}Calibrated for: {joined} ({len(names)} members) at {ts}"
+    def _refresh_button_state(self) -> None:
+        """Enable/disable buttons based on what's actually available.
+
+        Roster requires a party_region (otherwise "Load party members" has
+        nothing to OCR against). Clear-calibration only makes sense when
+        there's a calibration to clear. Spec dropdown is greyed when no
+        class is picked. Calibrate stays on always — it's how you bootstrap
+        the rest. Run after every state change (init, apply, clear,
+        character switch) so the affordance is always current.
+        """
+        has_class_and_spec = bool(
+            self._class_combo.currentData() and self._spec_combo.currentData()
+        )
+        has_party_region = bool(
+            self._calibration and self._calibration.party_region
+        )
+        has_any_calibration = self._calibration is not None and bool(
+            self._calibration.party_region
+            or self._calibration.cooldown_region
+            or self._calibration.cooldown_icons
+            or self._calibration.party_members
+        )
+
+        # Roster needs a party_region (the saved bbox to OCR within).
+        self._roster_btn.setEnabled(has_party_region)
+        if not has_class_and_spec:
+            self._roster_btn.setToolTip("Pick Class + Spec, then Calibrate first.")
+        elif not has_party_region:
+            self._roster_btn.setToolTip(
+                "Calibrate first so we know where the party frames are."
+            )
+        else:
+            self._roster_btn.setToolTip(
+                "Edit the per-run roster. 'Load party members' reads names "
+                "from the saved party region — no re-calibration needed."
+            )
+
+        # Clear calibration only when there's something to clear.
+        self._clear_cal_btn.setEnabled(has_any_calibration)
+        if not has_any_calibration:
+            self._clear_cal_btn.setToolTip(
+                "No calibration loaded — nothing to clear."
+            )
+        else:
+            self._clear_cal_btn.setToolTip(
+                "Forget the saved calibration and drop cooldown "
+                "recommendations. Your dungeon callouts stay. Recalibrate "
+                "anytime."
+            )
+
+        # Spec dropdown is meaningless without a class picked.
+        self._spec_combo.setEnabled(bool(self._class_combo.currentData()))
+
+    def _update_status(self) -> None:
+        """Refresh the status bar + preview placeholder to show the current
+        mode at a glance: which dungeon's callouts are active and whether
+        cooldown recommendations are on. Also the empty-state guidance when no
+        dungeon is picked yet."""
+        dungeon = self._dungeon_combo.currentData() or (
+            self._calibration.dungeon_name if self._calibration else None
+        )
+        if not dungeon:
+            self._calibration_status.setText("No dungeon selected — pick one to start  ▸")
+            self.frame_widget.set_placeholder(
+                "Pick a dungeon above to start getting callouts.\n"
+                "Optional: click Calibrate to add cooldown recommendations."
+            )
+            return
+
+        cal = self._calibration
+        recs_on = bool(
+            cal and cal.player_class and cal.player_spec
+            and self._suggestions_cb.isChecked()
+        )
+        if recs_on:
+            spec = f"{cal.player_spec} {cal.player_class}".replace("_", " ").title()
+            n = len(cal.roster())
+            rec_text = f"Recommendations: {spec}" + (f"  ({n} party)" if n else "")
+        elif not self._suggestions_cb.isChecked():
+            rec_text = "Recommendations: off (Suggestions unchecked)"
+        else:
+            rec_text = "Recommendations: off — Calibrate to enable"
+        self._calibration_status.setText(f"Callouts: {dungeon}      ·      {rec_text}")
+        self.frame_widget.set_placeholder(f"Watching for cast bars in {dungeon}…")

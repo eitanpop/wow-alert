@@ -86,7 +86,7 @@ spells:
     name: "Puncturing Bite"
     aliases: ["Puncture Bite", "Puncturing Blte"]
     severity: danger
-    phrase: BLEED ON YOU
+    phrase: PUNCTURING BITE BLEED
     cast_by: mob
     school: physical
     interruptible: false
@@ -286,7 +286,7 @@ spells:
     name: "Heaving Yank"
     aliases: ["Heaving Yenk", "Heavlng Yank"]
     severity: info
-    phrase: AIM HOOK
+    phrase: AIM HOOK AND DEFENSIVE
     cast_by: boss
     school: physical
     interruptible: false
@@ -349,7 +349,7 @@ spells:
     name: "Gore Whirl"
     aliases: ["Gore WhirI", "Gore Wirl"]
     severity: danger
-    phrase: MOVE OUT
+    phrase: MOVE OUT AND SEESEE
     cast_by: mob
     school: physical
     interruptible: false

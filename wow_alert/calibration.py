@@ -1,41 +1,27 @@
-"""LLM-driven screen calibration.
+"""Local-only screen calibration.
 
-Two-pass LLM design (plus one CV step).
+The user draws two regions (party frames + cooldown manager) in the
+region-confirm dialog. This module reads what's inside them:
 
-  Pass 1 — "locate". Send the full screenshot. Ask Claude to return two
-           bboxes only: where the party frames are and where the cooldown
-           manager is. No name reading, no icon ID — just region location.
-  Pass 2 — "read party". Crop the source frame to the party region (with
-           padding) and resend. The crop fills the LLM's visual field, so
-           small text reads accurately.
-  CV step — "find icons". Within the user-confirmed cooldown region,
-           OpenCV contour detection finds per-icon bboxes. Replaces a
-           previous LLM call that proved imprecise — it routinely
-           returned bboxes that cut across icon seams.
-
-Why CV over LLM for icon localization: WoW spell icons are high-
-saturation square sprites on a low-saturation background, which makes
-them trivial to isolate with `cv2.findContours` on a saturation-
-thresholded mask. The LLM eyeballs positions and lands within a few
-pixels of the right spot, but a few pixels is enough to produce half-
-and-half crops when icons are tightly packed.
-
-Cost: one LLM call removed. Latency: ~5 s saved.
+  Party path — local OCR (rapidocr) reads each party-slot name from a
+    tight crop of the party region. Roles aren't OCR-able (they're
+    icons), so they're left blank for the user to set in the edit dialog.
+  Cooldown path — an `IconMatcher` pre-restricted to the player's
+    class+spec slides each known spell icon (`<spell_id>.png` in the
+    user-data icons dir) across the cooldown crop. Spells whose peak
+    correlation clears the matcher's threshold are returned at the peak
+    position. Background colors / textures don't matter — `matchTemplate`
+    with `TM_CCOEFF_NORMED` correlates icon-intrinsic pixels.
 
 Bbox bookkeeping: every coordinate in the returned `Calibration` is in
-the original full-resolution frame's pixel space, so the OpenCV cooldown
+the original full-resolution frame's pixel space, so the cooldown
 watcher and icon matcher can use them directly.
 """
 from __future__ import annotations
 
-import base64
-import json
 import logging
-import os
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
@@ -43,10 +29,6 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
-
-
-_MODEL = "claude-sonnet-4-6"
-_MAX_TOKENS = 2048
 
 
 # WoW class / spec taxonomy. Keys are the canonical lowercase tokens
@@ -79,36 +61,6 @@ WOW_SPECS: dict[str, list[str]] = {
 # passes 2/3. The pass-1 bboxes are approximate; padding ensures we don't
 # clip the edges of the UI element by accident.
 _CROP_PADDING_FRACTION = 0.10
-
-
-_PROMPT_READ_PARTY = """\
-This image is a tight crop of a World of Warcraft party/raid frame. Read
-each visible teammate slot.
-
-For each slot:
-- `name`: transcribe the player name character-by-character from the
-  pixels you actually see. If ANY character is unclear, set name to null.
-  Do not invent or fill in plausible-looking names.
-- `role`: one of "tank", "healer", "dps", or null. Look for visible cues:
-  small role icons (shield = tank, cross = healer, sword = dps); class
-  icons together with what you know about the spec; party-frame coloring
-  conventions. If you can't tell with high confidence, return null — the
-  user will fill it in. Do not guess from name alone.
-- `bbox`: [x1, y1, x2, y2] in pixels (relative to THIS cropped image,
-  top-left origin), encompassing the full slot.
-
-Return an empty list if no slots are legible.
-
-Respond with ONLY this JSON object, no prose, no code fences:
-{
-  "party_members": [
-    {"name": "..." | null, "role": "tank" | "healer" | "dps" | null,
-     "bbox": [x1, y1, x2, y2]},
-    ...
-  ],
-  "notes": "any caveats"
-}
-"""
 
 
 class PartyMember(BaseModel):
@@ -155,28 +107,37 @@ class CooldownIcon(BaseModel):
 
 
 class Calibration(BaseModel):
-    """One snapshot of what the LLM saw on screen.
+    """The user's saved UI + roster state.
+
+    Two logical groups of fields live in one file because they share the same
+    on-disk format and version:
+
+      Slow-changing (UI calibration — set once per character / UI setup):
+        `party_region`, `cooldown_region`, `player_class`, `player_spec`,
+        `cooldown_icons`. Refreshed only when the user explicitly clicks
+        Calibrate.
+
+      Fast-changing (per-run roster + session):
+        `party_members`, `player_name`, `dungeon_name`. Updated frequently
+        — every dungeon swap or party reshuffle. Edited via the Roster
+        dialog; dungeon also via the top-level picker.
 
     All bboxes are in the original (full-resolution) capture frame's pixel
-    coordinates. Pass-1 region detection + pass-2/3 crop+read accumulate
-    into the same coordinate space via the unscale-then-offset transforms
-    inside `calibrate()`.
-
-    `player_class` and `player_spec` are the player's character config. The
-    LLM proposes them from on-screen cues (cooldown manager icons, action
-    bar); the user confirms/overrides in the post-calibration dialog.
-    Together they pick the file at `config/classes/<class>/<spec>.yaml`
-    which gives the rule engine its action library.
+    coordinates. `party_region` / `cooldown_region` are the user-drawn
+    bounding rectangles around the UI elements — kept so the Roster dialog
+    can re-OCR party names without forcing the user back through region
+    calibration.
     """
 
+    party_region: tuple[int, int, int, int] | None = None
+    cooldown_region: tuple[int, int, int, int] | None = None
     party_members: list[PartyMember] = Field(default_factory=list)
     cooldown_icons: list[CooldownIcon] = Field(default_factory=list)
     dungeon_name: str | None = None
     player_class: str | None = None
     player_spec: str | None = None
-    # The player's own character name. Used to detect when a cast targets
-    # the player (vs a teammate), so rules can recommend a self defensive.
-    # User-entered in the calibration dialog; the LLM doesn't read it.
+    # The player's own character name — the roster row marked "Me". Used so
+    # rules can tell a cast on the player from one on a teammate.
     player_name: str | None = None
     notes: str = ""
     calibrated_at: datetime = Field(default_factory=datetime.now)
@@ -233,86 +194,120 @@ class Calibration(BaseModel):
 
 
 class CalibrationError(RuntimeError):
-    """Raised when calibration cannot complete (no API key, API error,
-    unparseable response, etc.). The message is user-facing."""
+    """Raised when calibration cannot complete. Message is user-facing."""
 
 
-def _make_client() -> Any:
-    if os.environ.get("ANTHROPIC_API_KEY") is None:
-        raise CalibrationError(
-            "ANTHROPIC_API_KEY environment variable is not set. "
-            "Set it before running calibration."
+# Party-frame names render smaller than cast-bar text; the OCR detector
+# down-samples large inputs, so upscale the (already-small) party crop to keep
+# the names resolvable.
+_PARTY_OCR_UPSCALE = 3
+
+
+def _read_party_via_ocr(crop: np.ndarray, ocr) -> list[dict]:
+    """Read party-member names from a party-frame crop with local OCR.
+
+    Upscales the crop, OCRs it, keeps name-like text (dropping HP bars like
+    '1.2M/1.2M' and bare level numbers), strips the game's '...' truncation,
+    and returns members ordered top-to-bottom in crop-local coords. Roles
+    aren't OCR-able (they're icons), so they're left unset for the user to
+    fill in the confirm dialog. Returns [] if `ocr` is None.
+    """
+    if ocr is None or crop is None or crop.size == 0:
+        return []
+    up = cv2.resize(
+        crop, None, fx=_PARTY_OCR_UPSCALE, fy=_PARTY_OCR_UPSCALE,
+        interpolation=cv2.INTER_CUBIC,
+    )
+    members: list[dict] = []
+    for text, _conf, (x1, y1, x2, y2) in ocr.read_boxes(up):
+        name = text.strip().rstrip(".").strip()
+        letters = sum(c.isalpha() for c in name)
+        digits = sum(c.isdigit() for c in name)
+        if letters < 2 or "/" in name or digits >= letters:
+            continue  # HP ('1.2M/1.2M'), level ('3'), other non-name text
+        bbox = (
+            x1 // _PARTY_OCR_UPSCALE, y1 // _PARTY_OCR_UPSCALE,
+            x2 // _PARTY_OCR_UPSCALE, y2 // _PARTY_OCR_UPSCALE,
         )
-    try:
-        import anthropic
-    except ImportError as exc:
-        raise CalibrationError(
-            "anthropic SDK is not installed. Run `poetry install`."
-        ) from exc
-    return anthropic.Anthropic()
+        members.append({"name": name, "bbox": bbox})
+    members.sort(key=lambda m: m["bbox"][1])
+    return members
+
+
+def ocr_party_members(
+    image_bgr: np.ndarray,
+    party_region: tuple[int, int, int, int],
+    ocr,
+) -> list[dict]:
+    """OCR the party region of a fresh frame to refresh the roster.
+
+    Returns `[{"name": str, "bbox": (x1, y1, x2, y2)}, ...]` in source-frame
+    coordinates, ordered top-to-bottom. The Roster dialog calls this when
+    the user clicks "Load party members" — no full calibrate_read needed,
+    since regions + class/spec + icons don't change between runs.
+    """
+    crop, crop_origin = _crop_with_padding(image_bgr, party_region)
+    ox, oy = crop_origin
+    out: list[dict] = []
+    for member in _read_party_via_ocr(crop, ocr):
+        x1, y1, x2, y2 = member["bbox"]
+        out.append({
+            "name": member["name"],
+            "bbox": (x1 + ox, y1 + oy, x2 + ox, y2 + oy),
+        })
+    return out
 
 
 def calibrate_read(
     image_bgr: np.ndarray,
     party_region: tuple[int, int, int, int] | None,
     cooldown_region: tuple[int, int, int, int] | None,
+    matcher=None,
     dungeon_name: str | None = None,
+    player_class: str | None = None,
+    player_spec: str | None = None,
     prior_notes: str = "",
 ) -> Calibration:
-    """Read the contents of the user-confirmed regions.
+    """UI calibration: regions, class/spec, cooldown icons.
 
-    Pass 2: LLM transcribes party-frame names + roles from a crop of
-    the party region. Pass 3 (icons): OpenCV contour detection finds
-    individual cooldown-icon bboxes inside the cooldown region.
+    Slides every spell icon in the class-restricted `matcher` across the
+    cooldown crop and returns peak positions with spell IDs already
+    populated. The party region is saved on the Calibration so the Roster
+    dialog can OCR it later — calibrate_read itself does not read names,
+    since roster changes per dungeon run while UI calibration only changes
+    when the user's UI does.
 
-    `party_region` and `cooldown_region` are in source-frame coords;
-    either may be None to skip that pass. `dungeon_name` and
-    `prior_notes` flow through unchanged.
+    `party_region` and `cooldown_region` are in source-frame coords; either
+    may be None to skip. `matcher` must be class-restricted; a None matcher
+    leaves `cooldown_icons` empty.
     """
-    client = _make_client()
     notes: list[str] = []
     if prior_notes:
-        notes.append(f"locate: {prior_notes}")
-
-    party_members: list[dict] = []
-    if party_region is not None:
-        crop, crop_origin = _crop_with_padding(image_bgr, party_region)
-        parsed = _call_pass(client, crop, _PROMPT_READ_PARTY)
-        scale = parsed.get("_encoding_scale", 1.0)
-        for m in parsed.get("party_members", []) or []:
-            bbox = _resolve_bbox(m.get("bbox"), scale, offset=crop_origin)
-            if bbox is None:
-                continue
-            party_members.append({
-                "name": m.get("name"),
-                # The dialog's role dropdown pre-selects from this value
-                # so the user usually only has to confirm.
-                "role": m.get("role"),
-                "bbox": bbox,
-            })
-        if parsed.get("notes"):
-            notes.append(f"party: {parsed['notes']}")
+        notes.append(prior_notes)
 
     cooldown_icons: list[dict] = []
-    if cooldown_region is not None:
-        from wow_alert.cooldown_grid import find_icon_bboxes
-
+    if cooldown_region is not None and matcher is not None:
         crop, crop_origin = _crop_with_padding(image_bgr, cooldown_region)
-        local_bboxes = find_icon_bboxes(crop)
         ox, oy = crop_origin
-        for x1, y1, x2, y2 in local_bboxes:
-            # Translate crop-local coords back to source-frame coords.
+        matches = matcher.find_in_crop(crop)
+        for spell_id, (x1, y1, x2, y2), _score in matches:
             cooldown_icons.append({
                 "bbox": (x1 + ox, y1 + oy, x2 + ox, y2 + oy),
+                "spell_id": spell_id,
             })
         notes.append(
-            f"cooldowns: cv2 contour detection found {len(local_bboxes)} icons"
+            f"cooldowns: template match identified {len(matches)} icons"
         )
+    elif cooldown_region is not None:
+        notes.append("cooldowns: no matcher provided — region skipped")
 
     payload = {
-        "party_members": party_members,
+        "party_region": party_region,
+        "cooldown_region": cooldown_region,
         "cooldown_icons": cooldown_icons,
         "dungeon_name": dungeon_name,
+        "player_class": player_class,
+        "player_spec": player_spec,
         "notes": " | ".join(notes),
     }
     try:
@@ -323,8 +318,8 @@ def calibrate_read(
         ) from exc
 
     logger.info(
-        "calibrate_read: %d party members (%d named), %d cooldown icons",
-        len(cal.party_members), len(cal.roster()), len(cal.cooldown_icons),
+        "calibrate_read: %d cooldown icons (party roster is set separately)",
+        len(cal.cooldown_icons),
     )
     return cal
 
@@ -356,82 +351,6 @@ def load_calibration(path: Path) -> Calibration | None:
 # ---- internals ----
 
 
-# Anthropic enforces a 5 MB per-image hard limit. Stay well below it.
-_MAX_IMAGE_BYTES = 4 * 1024 * 1024
-# Floor for downscale fallback — going smaller than this hurts text legibility
-# more than it helps fit in the byte budget.
-_MIN_IMAGE_DIM = 1280
-# Minimum size we upscale crops to before sending. Small UI elements (e.g.,
-# a 65x115 party-frame crop on a low-UI-scale ultrawide) are pixelated
-# postage stamps to the LLM otherwise; upscaling with cubic interpolation
-# gives Claude's vision model more tokens to spend on the same content,
-# which makes small text legible.
-_MIN_UPSCALE_DIM = 1024
-
-
-def _call_pass(client: Any, image_bgr: np.ndarray, prompt: str) -> dict:
-    """Encode, send, parse one LLM round-trip.
-
-    Stuffs the encoding scale into the returned dict under the
-    `_encoding_scale` key so the caller can un-scale returned bboxes
-    without juggling extra return values per pass.
-    """
-    import anthropic  # already imported in caller; cheap re-import for typing
-
-    image_b64, media_type, scale = _encode_for_api(image_bgr)
-    try:
-        response = client.messages.create(
-            model=_MODEL,
-            max_tokens=_MAX_TOKENS,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_b64,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
-    except anthropic.APIError as exc:
-        raise CalibrationError(f"Anthropic API error: {exc}") from exc
-
-    text = _extract_text(response)
-    parsed = _parse_json(text)
-    parsed["_encoding_scale"] = scale
-    return parsed
-
-
-def _resolve_bbox(
-    bbox: Any,
-    scale: float,
-    offset: tuple[int, int] = (0, 0),
-) -> tuple[int, int, int, int] | None:
-    """Convert an LLM-returned bbox into source-frame coordinates.
-
-    `scale` is the factor `_encode_for_api` applied before sending — bbox
-    coords are in that scaled space, so we divide. `offset` is the (x, y)
-    origin of the crop (if any) within the source frame, added after
-    unscaling. Returns None if the input is missing or malformed.
-    """
-    if not bbox or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-        return None
-    try:
-        inv = 1.0 / scale
-        x1, y1, x2, y2 = (int(round(c * inv)) for c in bbox)
-    except (TypeError, ValueError):
-        return None
-    ox, oy = offset
-    return (x1 + ox, y1 + oy, x2 + ox, y2 + oy)
-
-
 def _crop_with_padding(
     image_bgr: np.ndarray, region: tuple[int, int, int, int]
 ) -> tuple[np.ndarray, tuple[int, int]]:
@@ -449,93 +368,3 @@ def _crop_with_padding(
     x2 = min(w, x2 + pad)
     y2 = min(h, y2 + pad)
     return image_bgr[y1:y2, x1:x2].copy(), (x1, y1)
-
-
-def _encode_for_api(image_bgr: np.ndarray) -> tuple[str, str, float]:
-    """Encode BGR ndarray as base64 JPEG that fits Anthropic's 5 MB limit.
-
-    Two-stage sizing:
-      - If the input is smaller than `_MIN_UPSCALE_DIM` on the long edge,
-        upscale it with cubic interpolation first. Small crops are
-        unreadable otherwise — see the constant comment for why.
-      - If the encoded JPEG exceeds the 5 MB budget, iteratively downscale
-        by 20% until it fits or we hit the floor.
-
-    Returns (base64_string, media_type, scale_factor). `scale_factor` is
-    final-image-dim / original-input-dim — callers divide their returned
-    bbox coords by this to recover original-input coordinates.
-    """
-    src_h, src_w = image_bgr.shape[:2]
-    long_edge = max(src_h, src_w)
-
-    if long_edge < _MIN_UPSCALE_DIM:
-        scale = _MIN_UPSCALE_DIM / long_edge
-        new_w = int(round(src_w * scale))
-        new_h = int(round(src_h * scale))
-        img = cv2.resize(image_bgr, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-        logger.debug(
-            "Upscaled crop %dx%d -> %dx%d (scale=%.2fx) for LLM legibility",
-            src_w, src_h, new_w, new_h, scale,
-        )
-    else:
-        img = image_bgr
-        scale = 1.0
-
-    while True:
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        if not ok:
-            raise CalibrationError("Failed to JPEG-encode the calibration frame.")
-        size = len(buf)
-        if size <= _MAX_IMAGE_BYTES:
-            logger.debug(
-                "Encoded calibration frame: %d bytes (%dx%d, scale=%.3f)",
-                size, img.shape[1], img.shape[0], scale,
-            )
-            return (
-                base64.standard_b64encode(buf.tobytes()).decode("utf-8"),
-                "image/jpeg",
-                scale,
-            )
-        new_w = int(img.shape[1] * 0.8)
-        new_h = int(img.shape[0] * 0.8)
-        if max(new_w, new_h) < _MIN_IMAGE_DIM:
-            raise CalibrationError(
-                f"Calibration frame is too large to fit Anthropic's 5 MB "
-                f"limit without dropping below {_MIN_IMAGE_DIM}px (text "
-                f"becomes unreadable). Try a smaller game window."
-            )
-        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        scale = scale * 0.8
-
-
-def _extract_text(response: Any) -> str:
-    """Pull the text payload out of an Anthropic Messages response."""
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            return block.text
-    raise CalibrationError("Anthropic response contained no text block.")
-
-
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-
-
-def _parse_json(text: str) -> dict:
-    """Robust JSON extraction. Tries raw parse first, falls back to ```json
-    fence extraction."""
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    match = _JSON_FENCE_RE.search(text)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError as exc:
-            raise CalibrationError(
-                f"Calibration response had a code fence but contents weren't "
-                f"valid JSON: {exc}"
-            ) from exc
-    raise CalibrationError(
-        f"Calibration response was not JSON. First 500 chars: {text[:500]!r}"
-    )
