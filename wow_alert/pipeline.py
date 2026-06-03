@@ -19,8 +19,10 @@ and make pause/stop unresponsive.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
@@ -36,6 +38,7 @@ from wow_alert.events import (
     Recommendation,
     RuleDecisionContext,
 )
+from wow_alert.paths import USER_DATA_DIR
 from wow_alert.rules import RuleEngine, YamlSpellDb
 from wow_alert.tracker import CastBarTracker, Track
 
@@ -81,6 +84,7 @@ class PipelineWorker(QObject):
         deps: PipelineDeps,
         target_fps: int = 10,
         preview_enabled: bool = True,
+        ocr_dump: bool = False,
         parent: QObject | None = None,
     ):
         super().__init__(parent)
@@ -107,6 +111,21 @@ class PipelineWorker(QObject):
         # catches them; the default 10 FPS leaves headroom for jitter without
         # starving the GPU/game render thread.
         self._min_tick_ms = max(1, int(1000 / max(1, target_fps)))
+        # Debug aid (--ocr-dump): every crop handed to OCR is written to a
+        # timestamped folder under the user-data dir, named with what OCR
+        # parsed out of it. Lets you eyeball whether a misread is bad OCR on
+        # a clean crop or a bad detector bbox.
+        self._ocr_dump_dir = self._init_ocr_dump_dir(ocr_dump)
+        self._ocr_dump_idx = 0
+
+    @staticmethod
+    def _init_ocr_dump_dir(enabled: bool) -> Path | None:
+        if not enabled:
+            return None
+        out = USER_DATA_DIR / "ocr_debug" / time.strftime("%Y%m%d-%H%M%S")
+        out.mkdir(parents=True, exist_ok=True)
+        logger.info("OCR crop dump enabled -> %s", out)
+        return out
 
     @property
     def ocr(self) -> OcrEngine:
@@ -308,6 +327,9 @@ class PipelineWorker(QObject):
         crop_width = crop.shape[1]
         tokens = tokens_from_ocr_output(ocr_out)
         cast = make_cast_event(tokens, track.bbox, track.track_id, crop_width=crop_width)
+        # Dump before the empty-spell bail below so total OCR misses (the
+        # most interesting failures) are captured too. No-op unless enabled.
+        self._dump_ocr_crop(crop, cast)
         # If OCR produced no usable spell text, the bbox is almost certainly
         # a false positive from the detector (a buff icon, an HP plate) or
         # an OCR miss on a real cast bar. Either way the downstream stages
@@ -407,6 +429,22 @@ class PipelineWorker(QObject):
                 "DEBUG",
                 f"skipping {raw_desc}: fuzzy-matched recent (no DB)",
             )
+
+    def _dump_ocr_crop(self, crop: np.ndarray, cast) -> None:
+        """Write the OCR input crop to the debug dir, named with what was
+        parsed from it. No-op unless WOW_ALERT_OCR_DUMP enabled the dump."""
+        if self._ocr_dump_dir is None:
+            return
+        import cv2
+
+        self._ocr_dump_idx += 1
+        desc = self._describe(cast) if cast.spell else "NO_TEXT"
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", desc).strip("_")[:60] or "NO_TEXT"
+        name = f"{self._ocr_dump_idx:04d}_{safe}.png"
+        try:
+            cv2.imwrite(str(self._ocr_dump_dir / name), crop)
+        except Exception as exc:
+            logger.debug("OCR crop dump failed for %s: %s", name, exc)
 
     @staticmethod
     def _target_suffix(cast) -> str:

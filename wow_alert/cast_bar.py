@@ -130,6 +130,13 @@ def parse_tokens(
     else:
         spell_tokens = cleaned
 
+    # A unit name always contains letters. A "target" with none is a
+    # nameplate health/percent number ("0", "0.0", "501K") that bled into
+    # the right of the crop — drop it so it doesn't veto an otherwise exact
+    # spell match in the lookup's roster check, and isn't spoken as a target.
+    if target is not None and not any(c.isalpha() for c in target):
+        target = None
+
     spell = " ".join(t.text for t in spell_tokens).strip()
     return spell, target, duration
 

@@ -130,8 +130,8 @@ actions:
 
   - id: blinding_light
     label: "Blinding Light"
-    category: cc
-    scope: party_wide
+    category: [cc, stop]
+    scope: enemy_aoe
     spell_id: 115750
 
   # ---- Lightsmith hero-talent pickup (optional) ----

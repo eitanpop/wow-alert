@@ -3,10 +3,12 @@
 Usage:
     python -m wow_alert.tools.fetch_icons
 
-Walks `config/classes/*/*.yaml`, collects every `spell_id` value, and
-for each one that doesn't already have a `<spell_id>.png` in the icons
-dir (the user-data location by default; see --icons-dir), fetches the
-icon and writes it.
+Walks every class library the app can see — bundled
+`wow_alert/_defaults/classes/<class>/<spec>.yaml` plus any user
+overrides under the user-data config dir — collects every `spell_id`
+value, and for each one that doesn't already have a `<spell_id>.png` in
+the icons dir (the user-data location by default; see --icons-dir),
+fetches the icon and writes it.
 
 Source order:
 
@@ -44,8 +46,7 @@ from pathlib import Path
 
 import yaml
 
-from wow_alert.class_library import ClassActions
-from wow_alert.config import REPO_ROOT
+from wow_alert.class_library import ClassActions, _layered_class_spec_paths
 from wow_alert.paths import ICONS_DIR
 
 logger = logging.getLogger("fetch_icons")
@@ -182,12 +183,10 @@ def _fetch_one(spell_id: int, target: Path) -> bool:
     return True
 
 
-def _collect_spell_ids(classes_dir: Path) -> set[int]:
-    """Every spell_id referenced anywhere under config/classes/."""
+def _collect_spell_ids() -> set[int]:
+    """Every spell_id across all effective class libraries (bundled + user)."""
     ids: set[int] = set()
-    if not classes_dir.exists():
-        return ids
-    for path in sorted(classes_dir.rglob("*.yaml")):
+    for path in sorted(set(_layered_class_spec_paths().values())):
         try:
             with path.open("r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
@@ -202,11 +201,6 @@ def _collect_spell_ids(classes_dir: Path) -> set[int]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config-dir", type=Path, default=REPO_ROOT / "config",
-        help="Path to the config root, where class libraries are read from "
-             "(default: %(default)s).",
-    )
     parser.add_argument(
         "--icons-dir", type=Path, default=ICONS_DIR,
         help="Where to write icon PNGs (default: the user-data icons dir, "
@@ -229,11 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     icon_dir = args.icons_dir
     icon_dir.mkdir(parents=True, exist_ok=True)
 
-    spell_ids = _collect_spell_ids(args.config_dir / "classes")
+    spell_ids = _collect_spell_ids()
     if not spell_ids:
         logger.error(
-            "No spell IDs found under %s. Add class library files first.",
-            args.config_dir / "classes",
+            "No spell IDs found in any class library. Add a "
+            "classes/<class>/<spec>.yaml file first."
         )
         return 1
 

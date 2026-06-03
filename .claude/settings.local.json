@@ -101,7 +101,18 @@
       "Bash(D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe -m vulture D:/wow_rl_addon/wow-alert/wow_alert --min-confidence 60)",
       "Bash(D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe -m pytest -q)",
       "Bash(\"D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe\" -m wow_alert.tools.diagnose_match \"C:/Users/eitan/AppData/Local/wow-alert/calibration_artifacts/20260530-225252\")",
-      "Bash(\"D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe\" _test_cd_watcher.py)"
+      "Bash(\"D:/wow_rl_addon/wow-alert/.venv/Scripts/python.exe\" _test_cd_watcher.py)",
+      "WebSearch",
+      "WebFetch(domain:www.wowhead.com)",
+      "WebFetch(domain:news.blizzard.com)",
+      "Read(//c/Users/eitan/AppData/Local/wow-alert/icons/**)",
+      "Read(//c/Users/eitan/AppData/Local/wow-alert/config/classes/**)",
+      "Read(//c/Users/eitan/AppData/Local/wow-alert/config/classes/shaman/**)",
+      "Bash(python -m wow_alert.tools.fetch_icons)",
+      "Bash(python -m pytest tests/ -k \"cast_bar or parse\" -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_cast_bar.py -q)",
+      "Bash(.venv/Scripts/python.exe -c \"import wow_alert.cli as c; print\\('has main:', hasattr\\(c,'main'\\)\\)\")",
+      "Bash(.venv/Scripts/python.exe *)"
     ]
   }
 }

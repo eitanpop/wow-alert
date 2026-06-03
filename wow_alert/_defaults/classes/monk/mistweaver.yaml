@@ -115,8 +115,8 @@ actions:
 
   - id: leg_sweep
     label: "Leg Sweep"
-    category: cc
-    scope: party_wide
+    category: [cc, stop]
+    scope: enemy_aoe
     tags: [melee_range]
     spell_id: 119381
 
@@ -124,7 +124,7 @@ actions:
   - id: ring_of_peace
     label: "Ring of Peace"
     category: stop
-    scope: party_wide
+    scope: enemy_aoe
     spell_id: 116844
 
   # ---- Choice-node alternates (uncomment whichever side the build uses) ----

@@ -59,7 +59,42 @@ logger = logging.getLogger(__name__)
 
 
 ALLOWED_CATEGORIES = {"defensive", "heal", "dispel", "interrupt", "cc", "stop", "utility"}
-ALLOWED_SCOPES = {"self", "single_target", "party_wide", "raid_wide"}
+
+# Scope describes WHO the ability affects. The ally-side scopes
+# (self / single_target / party_wide / raid_wide) describe targeting on
+# friendly characters; enemy_aoe is the explicit enemy-side scope for
+# AoE CCs / knockbacks / silences (Capacitor Totem, Blinding Light,
+# Leg Sweep, Ring of Peace, etc.). Keeping enemy effects out of the
+# ally vocabulary prevents an action like Capacitor Totem from being
+# accidentally bound by a rule that filters on `scope: party_wide`
+# expecting an ally-side effect.
+ALLOWED_SCOPES = {"self", "single_target", "party_wide", "raid_wide", "enemy_aoe"}
+
+# The full vocabulary of tags that may appear on a ClassAction. Two
+# kinds: filter-driving tags (consumed by `has_tag` / `lacks_tag` in
+# tag_rules.yaml or a per-dungeon rule) and informational tags (no rule
+# reads them, but they document a property of the action — kept in the
+# vocabulary deliberately so authoring is consistent).
+#
+# Extending this set is intentional — a typo'd tag silently fails to
+# bind a priority filter, so the validator below raises at load time
+# instead of letting authors invent parallel vocabulary.
+ALLOWED_TAGS = {
+    # ---- Filter-driving (see tag_rules.yaml has_tag / lacks_tag) ----
+    "full_immunity",        # big_damage_single / big_damage_party skip these for self
+    "aggro_dropping",       # big_damage_single splits cast-on-tank handling on this
+    "physical_immunity",    # bleed requires it
+    "magic",                # dispel_magic requires it
+    "curse",                # dispel_curse requires it
+    "poison",               # dispel_poison requires it
+    "disease",              # dispel_disease requires it
+    "snare_break",          # snare requires it
+    "fear_break",           # fear requires it (Tremor Totem, racials)
+    # ---- Informational — no rule reads these ----
+    "magic_immunity",       # documents Spellwarding-style immunities
+    "emergency_only",       # documents save-it-for-trouble cooldowns
+    "melee_range",          # documents melee-only abilities
+}
 
 
 class ClassAction(BaseModel):
@@ -108,6 +143,18 @@ class ClassAction(BaseModel):
                 f"scope must be one of {sorted(ALLOWED_SCOPES)}, got {v!r}"
             )
         return v
+
+    @field_validator("tags")
+    @classmethod
+    def _validate_tags(cls, v: list[str]) -> list[str]:
+        tags = list(v)
+        bad = [t for t in tags if t not in ALLOWED_TAGS]
+        if bad:
+            raise ValueError(
+                f"tag values must each be one of {sorted(ALLOWED_TAGS)}, "
+                f"got {bad!r}"
+            )
+        return tags
 
 
 class ClassActions(BaseModel):

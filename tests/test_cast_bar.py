@@ -136,6 +136,18 @@ class TestParseTokens:
         assert target == "abc"
         assert duration is None
 
+    def test_numeric_trailing_token_not_treated_as_target(self):
+        # A nameplate health/percent number past the gap is not a unit name.
+        # It must not become the target, or it would veto an exact spell
+        # match in the lookup's roster check.
+        spell, target, duration = parse_tokens(
+            [tok("Flaming", 30, 110), tok("Updraft", 112, 200), tok("0", 700, 720)],
+            crop_width=CROP_WIDTH,
+        )
+        assert spell == "Flaming Updraft"
+        assert target is None
+        assert duration is None
+
     def test_punctuation_stripped(self):
         spell, _, _ = parse_tokens(
             [tok("Polymorph:", 50, 200)], crop_width=CROP_WIDTH

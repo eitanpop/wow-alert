@@ -1,0 +1,129 @@
+class: shaman
+spec: restoration
+
+# Restoration Shaman action library for Midnight (Patch 12.0.5).
+#
+# This file lists abilities that a rule engine might bind for a callout.
+# Pure healing-rotation spells (Healing Wave, Riptide, Chain Heal,
+# Healing Rain, Healing Stream Totem, Unleash Life, Primordial Wave) and
+# maintenance buffs (Earth Shield — pre-cast on the tank, not reactive)
+# are not listed: rules don't bind them, the player manages them.
+#
+# Notes on talent / build assumptions:
+# - Purify Spirit dispels Magic AND Curse baseline. Resto has no disease
+#   cleanse; Poison Cleansing Totem (talent) handles poison party-wide.
+# - Capacitor, Earthgrab, Wind Rush, and Poison Cleansing Totem are
+#   talents — listed assuming a typical M+ build.
+# - Ascendance and Healing Tide are both listed; if the build runs them
+#   on a choice node, comment out whichever isn't picked.
+
+actions:
+  # ---- Party-wide DR + HP redistribute ----
+  # Spirit Link is BOTH damage reduction (10%) and HP-balancing — listed
+  # first among party-wide CDs so generic incoming-damage rules bind it
+  # before the pure heal cooldowns. `heal` is also in category so
+  # party-wide heal rules can fall through to it.
+  - id: spirit_link_totem
+    label: "Spirit Link"
+    category: [defensive, heal]
+    scope: party_wide
+    spell_id: 98008
+
+  # ---- Party-wide healing cooldowns ----
+  - id: healing_tide_totem
+    label: "Healing Tide"
+    category: heal
+    scope: party_wide
+    spell_id: 108280
+
+  - id: ascendance
+    label: "Ascendance"
+    category: heal
+    scope: party_wide
+    tags: [emergency_only]
+    spell_id: 114052
+
+  # ---- Self defensive ----
+  - id: astral_shift
+    label: "Astral Shift"
+    category: defensive
+    scope: self
+    spell_id: 108271
+
+  # ---- Self utility ----
+  # Spirit Walk clears snares/roots and adds speed — NOT damage
+  # mitigation, so it lives under `utility` to keep tank-buster /
+  # defensive rules from binding it. snare_break drives the snare-break
+  # callout path; the rule fires the self-snare step when the shaman
+  # themselves is the target.
+  - id: spirit_walk
+    label: "Spirit Walk"
+    category: utility
+    scope: self
+    tags: [snare_break]
+    spell_id: 58875
+
+  # ---- Dispels ----
+  # Purify Spirit removes Magic and Curse (baseline). Poison Cleansing
+  # Totem covers poison party-wide; Resto has no disease cleanse.
+  - id: purify_spirit
+    label: "Purify Spirit"
+    category: dispel
+    scope: single_target
+    tags: [magic, curse]
+    spell_id: 77130
+
+  - id: poison_cleansing_totem
+    label: "Poison Cleansing Totem"
+    category: dispel
+    scope: party_wide
+    tags: [poison]
+    spell_id: 383013
+
+  # ---- Tremor (fear / charm / sleep break, party-wide while pulsing) ----
+  - id: tremor_totem
+    label: "Tremor Totem"
+    category: utility
+    scope: party_wide
+    tags: [fear_break]
+    spell_id: 8143
+
+  # ---- Interrupt ----
+  - id: wind_shear
+    label: "Wind Shear"
+    category: interrupt
+    scope: single_target
+    spell_id: 57994
+
+  # ---- Crowd control / stops ----
+  # Capacitor is both a real stop (delayed AoE stun that halts the boss
+  # mid-cast) and a generic cc tool, so it carries both categories. The
+  # stop rule prefers `category: stop` over the cc fallback, so this
+  # binds for stop-tagged casts even when other cc options exist.
+  - id: capacitor_totem
+    label: "Capacitor"
+    category: [cc, stop]
+    scope: enemy_aoe
+    spell_id: 192058
+
+  # Hex is the long single-target lockdown for the cc tag (a single add
+  # that needs to be parked). Breaks on damage, so it's not a stop
+  # answer.
+  - id: hex
+    label: "Hex"
+    category: cc
+    scope: single_target
+    spell_id: 51514
+
+  - id: earthgrab_totem
+    label: "Earthgrab"
+    category: cc
+    scope: enemy_aoe
+    spell_id: 51485
+
+  # ---- Party-wide movement utility ----
+  - id: wind_rush_totem
+    label: "Wind Rush"
+    category: utility
+    scope: party_wide
+    spell_id: 192077

@@ -42,6 +42,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Cap pipeline tick rate (frames/sec). Default 10.")
     p.add_argument("--dungeon", default=None,
                    help="Load only spells that match this dungeon (or have no dungeon set).")
+    p.add_argument("--ocr-dump", dest="ocr_dump", action="store_true",
+                   help="Write every crop sent to OCR (named with what was read) "
+                        "to <user-data>/ocr_debug/<timestamp>/ for debugging misreads.")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -87,7 +90,7 @@ def _collect_full_catalog() -> list[str]:
     return sorted(phrases)
 
 
-def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
+def build_app(config: AppConfig, ocr_dump: bool = False) -> tuple[QApplication, MainWindow]:
     # Pass [] so QApplication doesn't try to parse wow-alert's own CLI flags.
     app = QApplication([])
     apply_theme(app)
@@ -167,6 +170,7 @@ def build_app(config: AppConfig) -> tuple[QApplication, MainWindow]:
         deps,
         target_fps=config.target_fps,
         preview_enabled=config.show_preview,
+        ocr_dump=ocr_dump,
     )
     def load_dungeon(dungeon_name: str | None) -> None:
         """Load a dungeon's spells + rules and prerender its callout phrases.
@@ -326,7 +330,7 @@ def main() -> None:
     }
     config = load_config(args.config, overrides=overrides)
 
-    app, window = build_app(config)
+    app, window = build_app(config, ocr_dump=args.ocr_dump)
     window.show()
     sys.exit(app.exec())
 

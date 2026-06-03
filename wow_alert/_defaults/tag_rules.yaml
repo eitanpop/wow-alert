@@ -31,6 +31,7 @@ precedence:
   - dispel_curse
   - dispel_poison
   - dispel_disease
+  - fear
   - big_damage_party
   - snare
   - dodge
@@ -128,17 +129,47 @@ tags:
       has_tag: curse
       say: "{action.label} {target}"
       do: "{action.id}"
+  # Poison gets a party-wide fallback because several specs only have
+  # totem / aura-style party poison cleanses (Resto: Poison Cleansing
+  # Totem). The single-target dispel is tried first when it's available;
+  # the party-wide version covers the rest.
   dispel_poison:
     - category: dispel
       scope: single_target
       has_tag: poison
       say: "{action.label} {target}"
       do: "{action.id}"
+    - category: dispel
+      scope: party_wide
+      has_tag: poison
+      say: "{action.label} {spell}"
+      do: "{action.id}"
   dispel_disease:
     - category: dispel
       scope: single_target
       has_tag: disease
       say: "{action.label} {target}"
+      do: "{action.id}"
+
+  # A fear / charm / sleep cast that lands on the party → an ability
+  # that breaks or prevents those CC types. The action-side tag is
+  # fear_break — covers tools that handle one or more of fear, charm,
+  # sleep (Resto: Tremor Totem pulses all three; most racials cover
+  # the self case). Self-only break is tried first when the player is
+  # the target; party-wide tool (Tremor) covers everyone otherwise.
+  # No damage fallback: a fear/charm cast isn't a damage event, so the
+  # spell's own phrase warns when no break is available.
+  fear:
+    - target_is_self: true
+      category: utility
+      scope: self
+      has_tag: fear_break
+      say: "{action.label}"
+      do: "{action.id}"
+    - category: utility
+      scope: party_wide
+      has_tag: fear_break
+      say: "{action.label} {spell}"
       do: "{action.id}"
 
   # A big hit on EVERYONE — keep the group up, in order:
@@ -174,9 +205,17 @@ tags:
   # A snare or root on a player → a snare-break (Freedom / Tiger's Lust).
   # Those abilities carry the snare_break tag and live under `utility`
   # (they clear movement effects, they don't mitigate damage). Safe on
-  # anyone — they don't drop threat. No fallback: if none is up, the
-  # spell's own phrase warns.
+  # anyone — they don't drop threat. No damage fallback: if none is up,
+  # the spell's own phrase warns. Self path is listed first so the
+  # personal snare break (Resto: Spirit Walk) binds when the player
+  # themselves is the target.
   snare:
+    - target_is_self: true
+      category: utility
+      scope: self
+      has_tag: snare_break
+      say: "{action.label}"
+      do: "{action.id}"
     - category: utility
       scope: single_target
       has_tag: snare_break
